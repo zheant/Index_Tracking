@@ -14,7 +14,9 @@ Activate your virtual environment, move to the repository root and execute::
 
     python scripts/prepare_russell_constituents.py
 
-Pass ``--source`` or ``--output`` if you keep the CSVs elsewhere.
+    Pass ``--source`` or ``--output`` if you keep the CSVs elsewhere.  Use
+    ``--union-name`` to customise the aggregated permno file that will be
+    generated alongside the yearly snapshots.
 """
 from __future__ import annotations
 
@@ -38,10 +40,15 @@ def parse_args() -> argparse.Namespace:
         default=Path("financial_data/russel2000/constituants"),
         help="Destination folder for the normalised constituent files (default: %(default)s)",
     )
+    parser.add_argument(
+        "--union-name",
+        default="all_permnos.csv",
+        help="File name for the aggregated permno list (default: %(default)s)",
+    )
     return parser.parse_args()
 
 
-def normalise_constituents(source: Path, destination: Path) -> Path:
+def normalise_constituents(source: Path, destination: Path, union_name: str) -> Path:
     if not source.exists():
         raise FileNotFoundError(f"Source directory '{source}' not found")
 
@@ -68,7 +75,8 @@ def normalise_constituents(source: Path, destination: Path) -> Path:
         df.sort_values("permno").to_csv(year_output, index=False)
         print(f"Wrote {len(df)} permnos to {year_output}")
 
-    union_path = destination / "all_permnos.csv"
+    union_name = union_name if union_name.endswith(".csv") else f"{union_name}.csv"
+    union_path = destination / union_name
     pd.DataFrame(sorted(all_permnos), columns=["permno"]).to_csv(union_path, index=False)
     print(f"Saved {len(all_permnos)} unique permnos to {union_path}")
 
@@ -77,7 +85,7 @@ def normalise_constituents(source: Path, destination: Path) -> Path:
 
 def main() -> None:
     args = parse_args()
-    normalise_constituents(args.source, args.output)
+    normalise_constituents(args.source, args.output, args.union_name)
 
 
 if __name__ == "__main__":

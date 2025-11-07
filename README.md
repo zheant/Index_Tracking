@@ -25,4 +25,5 @@ adjusted price histories.
 
 If you keep the raw composition files elsewhere, override the `--source` option.
 Likewise, change `--output` if you want the normalised files to be written to a
-different location.
+different location. Use `--union-name` to override the name of the aggregated
+CSV if you need multiple universes side by side.
