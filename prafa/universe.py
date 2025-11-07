@@ -1,174 +1,99 @@
-import pandas as pd
+from __future__ import annotations
+
 from datetime import datetime
-import numpy as np
+from pathlib import Path
+from typing import List
+
+import pandas as pd
 
 
+class Universe:
+    """Data access layer for the optimisation workflow."""
 
-
-
-class Universe():
-    
-    
-    def __init__(
-        self,
-        args,
-    ) :
+    def __init__(self, args) -> None:
         self.args = args
-        
-        #données sur toutes l'historique
-        self.initialisation_donnes()
+        self._load_time_series()
 
-        #timeseries sur la periode en cours
-        self.df_return = None
-        self.df_index = None
+        self.df_return = pd.DataFrame()
+        self.df_index = pd.Series(dtype=float)
+        self.year: int | None = None
+        self.stock_list: List[str] = self.update_stock_list(None)
 
-        self.stock_list = self.update_stock_list(None)
-    
+    def _load_time_series(self) -> None:
+        base_path = Path("financial_data") / self.args.index
 
-    def initialisation_donnes(self):
-        #données sur toutes l'historique
-        self.df_return_all = pd.read_csv(f"financial_data/{self.args.index}/returns_stocks.csv")  #return des stocks 
-        #self.df_return_all.columns = [col.split()[0].replace('/', '.') for col in self.df_return_all.columns]
-        self.df_return_all['date'] = pd.to_datetime(self.df_return_all['date'])
-        self.df_return_all.set_index('date', inplace=True)
+        returns_path = base_path / "returns_stocks.csv"
+        index_path = base_path / "returns_index.csv"
 
-        self.df_index_all = pd.read_csv(f"financial_data/{self.args.index}/returns_index.csv")   #return de l'indice
-        self.df_index_all['Date'] = pd.to_datetime(self.df_index_all['Date'])
-        self.df_index_all.set_index('Date', inplace=True)
+        self.df_return_all = pd.read_csv(returns_path)
+        returns_date_col = "date" if "date" in self.df_return_all.columns else "Date"
+        self.df_return_all[returns_date_col] = pd.to_datetime(self.df_return_all[returns_date_col])
+        if returns_date_col != "date":
+            self.df_return_all.rename(columns={returns_date_col: "date"}, inplace=True)
+        self.df_return_all.set_index("date", inplace=True)
+        self.df_return_all.sort_index(inplace=True)
 
-    
-    def update_stock_list(self, datetime : datetime = None):
-        #ce code va aller chercher la compositon
-        #df = lambda year : pd.read_csv(f"financial_data/{self.args.index}/constituants/{year}.csv",usecols=["Ticker"]).str.split().str[0].str.replace("/", ".")
-        df = lambda year: pd.read_csv(
-                f"financial_data/{self.args.index}/constituants/{year}.csv", dtype={'permno': str})["permno"]
-        
-        if datetime is None:
-            #appelle dans le constructeur premier universe
-            self.year = int(self.args.start_date[0:4])
-            self.stock_list = df(self.year).tolist()
+        self.df_index_all = pd.read_csv(index_path)
+        date_column = "Date" if "Date" in self.df_index_all.columns else "date"
+        self.df_index_all[date_column] = pd.to_datetime(self.df_index_all[date_column])
+        self.df_index_all.set_index(date_column, inplace=True)
+        self.df_index_all.sort_index(inplace=True)
 
-        elif datetime.year != self.year:
-            #puisque le rebalancement se fait par an,
-            #on va chercher la liste des stocks pour l'année en cours
-            #sinon on va chercher les stocks pour la nouvelle année
-            self.year = datetime.year
-            self.stock_list = df(self.year).tolist()
+    def update_stock_list(self, current_datetime: datetime | None) -> List[str]:
+        """Refresh the list of tradable securities for the requested year."""
+        constituents_dir = Path("financial_data") / self.args.index / "constituants"
+
+        def load_year(year: int) -> List[str]:
+            csv_path = constituents_dir / f"{year}.csv"
+            if not csv_path.exists():
+                raise FileNotFoundError(f"Fichier de composition manquant : {csv_path}")
+            df = pd.read_csv(csv_path, dtype={"permno": str})
+            return df["permno"].dropna().astype(str).str.strip().tolist()
+
+        if current_datetime is None:
+            # Initial load when the universe is created.
+            self.year = int(self.args.start_date[:4])
+            self.stock_list = load_year(self.year)
+        elif current_datetime.year != self.year:
+            self.year = current_datetime.year
+            self.stock_list = load_year(self.year)
 
         return self.stock_list
-    
 
-    def new_universe(
-        self,
-        start_datetime : datetime,
-        end_datetime : datetime,
-        training : bool = True
-    )   :
-        """
-            Create a new universe with the specified time range.
+    def new_universe(self, start_datetime: datetime, end_datetime: datetime, training: bool = True) -> None:
+        start = pd.Timestamp(start_datetime)
+        end = pd.Timestamp(end_datetime)
 
-            par contre, dependamment si l'univers est pour entrainement ou pour le backtesting, on va devoir changer 
-            ou on appelle la fonction get_stock_list
-            si c'est pour l'entrainement, on va chercher la liste des stocks au moment end_datetime
-            si c'est pour le backtesting, on va chercher la liste des stocks au moment start
-        """
-      
-        
-        if type(start_datetime) != type(pd.Timestamp('now')):
-            start_datetime = pd.Timestamp(start_datetime)
-        if type(end_datetime) != type(pd.Timestamp('now')):
-            end_datetime = pd.Timestamp(end_datetime)
-        
-        #ajustement des stocks dans l'univers
         if training:
-            self.update_stock_list(end_datetime)
+            self.update_stock_list(end)
         else:
-            self.update_stock_list(start_datetime)
-        
-        # ⚠️ À mettre dans la méthode new_universe juste avant d'extraire les rendements :
+            self.update_stock_list(start)
+
         valid_stocks = [stock for stock in self.stock_list if stock in self.df_return_all.columns]
-        missing_stocks = set(self.stock_list) - set(valid_stocks)
-     
+        missing_stocks = sorted(set(self.stock_list) - set(valid_stocks))
         if missing_stocks:
-            print(f"⚠️ Les actions suivantes ne sont pas dans les données de rendement : {missing_stocks}")
-        self.stock_list = valid_stocks
-        
-        
-        # On trie self.stock_list selon l'ordre des colonnes de df_return_all
-        ordered_stocks = [stock for stock in self.df_return_all.columns if stock in self.stock_list]
-        #retourne les stocks de l'univers au bonne periode de temps
-        self.df_return = self.df_return_all.loc[start_datetime:end_datetime, ordered_stocks].copy().fillna(0)
-        self.df_index = self.df_index_all.loc[start_datetime:end_datetime].copy().fillna(0)
-        #self.data_cleaning()
+            print(
+                "⚠️ Les actions suivantes ne sont pas dans les données de rendement : "
+                + ", ".join(missing_stocks)
+            )
+
+        ordered_stocks = [stock for stock in self.df_return_all.columns if stock in valid_stocks]
+        returns_slice = self.df_return_all.loc[start:end, ordered_stocks].copy().fillna(0)
+        index_slice = self.df_index_all.loc[start:end].copy().fillna(0).squeeze()
+
+        common_index = returns_slice.index.intersection(index_slice.index)
+        self.df_return = returns_slice.loc[common_index]
+        self.df_index = index_slice.loc[common_index]
         self.stock_list = list(self.df_return.columns)
 
-    
-
-    
-    """
-    def data_cleaning(self):
-        # Nombre de colonnes avant remplacement
-        colonnes_avant = self.df_return.shape[1]
-
-        # Remplacer les NaN par des zéros
-        nan_avant = self.df_return.isna().sum().sum()
-        self.df_return.fillna(0, inplace=True)
-        nan_apres = self.df_return.isna().sum().sum()
-        print(f"Replaced {nan_avant} NaN values in df_return with 0.")
-
-        # S'assurer que l'index de df_index n'a pas de NaN
-        nan_index_avant = self.df_index.isna().sum().sum()
-        self.df_index.fillna(0, inplace=True)
-        print(f"Replaced {nan_index_avant} NaN values in df_index with 0.")
-
-        # Synchroniser les index
-        common_index = self.df_return.index.intersection(self.df_index.index)
-        self.df_return = self.df_return.loc[common_index]
-        self.df_index = self.df_index.loc[common_index]
-
-        print(f"Data cleaned and aligned on {len(common_index)} common dates.")
-    """
-
-
-    def get_stocks_returns(self):
+    def get_stocks_returns(self) -> pd.DataFrame:
         return self.df_return
-    
-    def get_index_returns(self):
-        #retourne une série!
-        return self.df_index.squeeze()
-    
-    def get_stock_namme_in_order(self):
-        return self.df_return.columns
-    
-    def get_number_of_stocks(self):
+
+    def get_index_returns(self) -> pd.Series:
+        return pd.Series(self.df_index, index=self.df_return.index)
+
+    def get_stock_namme_in_order(self) -> List[str]:  # noqa: D401 - kept for backward compatibility.
+        return self.df_return.columns.tolist()
+
+    def get_number_of_stocks(self) -> int:
         return len(self.stock_list)
-    
-    
-    """
-    def data_cleaning(self):
-        # Nombre de colonnes avant suppression
-        colonnes_avant = self.df_return.shape[1]
-
-        # Supprimer les colonnes avec plus de 10 NaN
-        self.df_return = self.df_return.loc[:, self.df_return.isna().sum() <= 10]
-        self.stock_list = self.df_return.columns.to_list()
-
-        # Nombre de colonnes après suppression
-        colonnes_apres = self.df_return.shape[1]
-        print(f"Removed {colonnes_avant - colonnes_apres} columns due to too many missing values.")
-        
-        # Supprimer les lignes avec au moins un NaN
-        lignes_avant = self.df_return.shape[0]
-        self.df_return.dropna(inplace=True)
-        lignes_apres = self.df_return.shape[0]
-        print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
-        
-        self.df_index.dropna(inplace=True)
-
-        common_index = self.df_return.index.intersection(self.df_index.index)
-        
-        self.df_return = self.df_return.loc[common_index]
-        self.df_index = self.df_index.loc[common_index]
-        lignes_apres = self.df_return.shape[0]
-        print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
-    """

@@ -89,3 +89,12 @@ after fixing the connection.
 Re-run the script whenever you add more constituent files or need to refresh
 the data window. Pass `--skip-index` if you plan to supply a different index
 return series manually.
+
+## Troubleshooting large diffs on GitHub
+
+If GitHub refuses to display a diff and reports that the generated diff exceeds
+its size limit, the commit usually contains heavy artifacts such as the
+`gurobi1200/` solver bundle or raw CSV exports under `financial_data/`. Check
+[`docs/troubleshooting_diff_limit.md`](docs/troubleshooting_diff_limit.md) for
+practical ways to keep those assets out of your commits or to move them to Git
+LFS before opening a pull request.
