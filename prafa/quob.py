@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -9,10 +10,57 @@ import numpy as np
 from scipy.optimize import minimize
 
 
-DEFAULT_REPLICATOR_BIN = Path(
-    os.environ.get("REPLICATOR_BIN", Path.home() / "or_tool/cmake-build/ReplicaTOR")
-).expanduser()
+def _resolve_replicator_bin(explicit: os.PathLike[str] | str | None = None) -> Path:
+    """Return a usable ReplicaTOR binary path.
 
+    The lookup order favours an explicit CLI argument, then the ``REPLICATOR_BIN``
+    environment variable, followed by a couple of common build locations that are
+    used throughout the project documentation.  The first existing, executable file
+    is returned; otherwise a :class:`FileNotFoundError` is raised.
+    """
+
+    candidates: list[Path] = []
+
+    if explicit:
+        candidates.append(Path(explicit))
+
+    env_value = os.environ.get("REPLICATOR_BIN")
+    if env_value:
+        candidates.append(Path(env_value))
+
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates.extend(
+        [
+            Path.home() / "or_tool/cmake-build/ReplicaTOR",
+            Path.home() / "or_tool/ReplicaTOR/cmake-build/ReplicaTOR",
+            repo_root / "or_tool/cmake-build/ReplicaTOR",
+            repo_root / "or_tool/ReplicaTOR/cmake-build/ReplicaTOR",
+        ]
+    )
+
+    checked = []
+    for candidate in candidates:
+        path = candidate.expanduser()
+        checked.append(path)
+        if path.is_file() and os.access(path, os.X_OK):
+            return path
+        # Some users forget to add the execute bit after compiling; detect this to
+        # provide a clearer error message.
+        if path.is_file():
+            current_mode = stat.S_IMODE(path.stat().st_mode)
+            if not (current_mode & stat.S_IXUSR):
+                raise PermissionError(
+                    "ReplicaTOR binary trouvé mais non exécutable à l'emplacement "
+                    f"{path}. Ajoutez les permissions d'exécution (chmod +x)."
+                )
+
+    searched = "\n - ".join(str(p) for p in checked)
+    raise FileNotFoundError(
+        "Impossible de localiser le binaire ReplicaTOR. Chemins vérifiés :\n"
+        f" - {searched}\n"
+        "Fournissez un chemin valide via --replicator-bin ou la variable d'environnement "
+        "REPLICATOR_BIN."
+    )
 
 
 class QUOB:
@@ -31,17 +79,8 @@ class QUOB:
         self.idx = None #liste d'indice des stonks choisit
         self.dist_dir = Path(__file__).resolve().parent / "dist_matrix"
         self.dist_dir.mkdir(parents=True, exist_ok=True)
-        if replicator_bin:
-            self.replicator_bin = Path(replicator_bin).expanduser()
-        else:
-            self.replicator_bin = DEFAULT_REPLICATOR_BIN
+        self.replicator_bin = _resolve_replicator_bin(replicator_bin)
         self.problem_name = "dist_matrix"
-        if not self.replicator_bin.exists():
-            raise FileNotFoundError(
-                "ReplicaTOR binary introuvable à l'emplacement "
-                f"{self.replicator_bin}. Fournissez un chemin valide via "
-                "--replicator-bin ou la variable d'environnement REPLICATOR_BIN."
-            )
 
         #construire ma matrice de distance
         if simple_corr:

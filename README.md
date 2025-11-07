@@ -99,7 +99,11 @@ binary in the following order:
 
 1. The `--replicator-bin` CLI flag passed to `main.py`.
 2. The `REPLICATOR_BIN` environment variable.
-3. The default path `~/or_tool/cmake-build/ReplicaTOR`.
+3. Common build folders:
+   - `~/or_tool/cmake-build/ReplicaTOR`
+   - `~/or_tool/ReplicaTOR/cmake-build/ReplicaTOR`
+   - `<repo>/or_tool/cmake-build/ReplicaTOR`
+   - `<repo>/or_tool/ReplicaTOR/cmake-build/ReplicaTOR`
 
 Example command line:
 
@@ -110,7 +114,7 @@ python main.py \
   --cardinality 30 \
   --start_date 2014-01-02 \
   --end_date 2023-12-31 \
-  --replicator_bin /home/ubuntu/or_tool/cmake-build/ReplicaTOR
+  --replicator_bin /home/ubuntu/or_tool/ReplicaTOR/cmake-build/ReplicaTOR
 ```
 
 Adjust the arguments to match your rebalancing schedule and data paths. The same
