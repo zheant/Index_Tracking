@@ -80,6 +80,12 @@ under `financial_data/russel2000/`:
   universe (serves as a proxy index if you do not have the official Russell
   2000 total-return series).
 
+If you see an authentication error (for example *“PAM authentication failed”*),
+double-check your username/password, make sure any required institutional VPN is
+connected, and confirm with WRDS support that your account is enabled for
+PostgreSQL access. The script will exit early in that situation so you can retry
+after fixing the connection.
+
 Re-run the script whenever you add more constituent files or need to refresh
 the data window. Pass `--skip-index` if you plan to supply a different index
 return series manually.

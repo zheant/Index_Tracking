@@ -34,6 +34,9 @@ except ImportError as exc:  # pragma: no cover - guidance script
         "The 'wrds' package is required. Install it with 'pip install wrds psycopg2-binary'."
     ) from exc
 
+from psycopg2 import OperationalError as PsycopgOperationalError
+from sqlalchemy.exc import OperationalError as SAOperationalError
+
 
 def _chunked(sequence: Sequence[int], chunk_size: int) -> Iterable[List[int]]:
     """Yield ``chunk_size``-sized chunks from ``sequence``."""
@@ -157,7 +160,17 @@ def main() -> None:
     print(f"Loaded {len(permnos)} unique permnos from {args.permno_csv}")
 
     print("Connecting to WRDS (you will be prompted for credentials)...")
-    conn = wrds.Connection()
+    try:
+        conn = wrds.Connection()
+    except (PsycopgOperationalError, SAOperationalError) as exc:
+        raise SystemExit(
+            "Failed to authenticate with WRDS.\n"
+            "Please verify your username/password, ensure any required VPN is active, "
+            "and confirm that your WRDS account is provisioned for PostgreSQL access.\n"
+            f"Original error: {exc}"
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        raise SystemExit("Unexpected error while connecting to WRDS: " + str(exc)) from exc
 
     try:
         returns_long = _fetch_crsp_returns(
