@@ -46,3 +46,40 @@ head -n 5 financial_data/russel2000/constituants/all_permnos.csv
 
 The `ls` and `head` commands confirm that the per-year CSVs and the aggregated
 `all_permnos.csv` file have been produced successfully.
+
+## Downloading adjusted returns from WRDS
+
+Once the constituent snapshots are ready, download the adjusted CRSP daily
+returns for every permno and generate the input matrices expected by the
+portfolio optimiser.
+
+Install the WRDS client in the virtual environment if it is not already
+available:
+
+```bash
+pip install wrds psycopg2-binary
+```
+
+Then run the helper script (change the dates if you need a different window):
+
+```bash
+cd ~/Index_Tracking
+source .venv/bin/activate
+python scripts/download_wrds_russell_data.py \
+  --permno-csv financial_data/russel2000/constituants/all_permnos.csv \
+  --start-date 2014-01-01 \
+  --end-date 2023-12-31
+```
+
+You will be prompted for your WRDS credentials. The script stores two files
+under `financial_data/russel2000/`:
+
+* `returns_stocks.csv` — wide matrix of daily returns with one column per
+  permno.
+* `returns_index.csv` — an equal-weight benchmark constructed from the same
+  universe (serves as a proxy index if you do not have the official Russell
+  2000 total-return series).
+
+Re-run the script whenever you add more constituent files or need to refresh
+the data window. Pass `--skip-index` if you plan to supply a different index
+return series manually.
