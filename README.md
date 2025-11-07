@@ -27,3 +27,22 @@ If you keep the raw composition files elsewhere, override the `--source` option.
 Likewise, change `--output` if you want the normalised files to be written to a
 different location. Use `--union-name` to override the name of the aggregated
 CSV if you need multiple universes side by side.
+
+## Quick command recap
+
+Copy/paste the following block on the EC2 instance (with the repository cloned)
+to stage the Russell 2000 constituent universe and review the generated files:
+
+```bash
+cd ~/Index_Tracking
+source .venv/bin/activate
+python scripts/prepare_russell_constituents.py \
+  --source "composition historique russel2000" \
+  --output "financial_data/russel2000/constituants"
+
+ls financial_data/russel2000/constituants
+head -n 5 financial_data/russel2000/constituants/all_permnos.csv
+```
+
+The `ls` and `head` commands confirm that the per-year CSVs and the aggregated
+`all_permnos.csv` file have been produced successfully.
