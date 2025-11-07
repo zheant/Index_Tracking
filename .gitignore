@@ -1,2 +1,10 @@
+# Virtual environments
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Installer archives
 Anaconda3-*.sh
 gurobi*.tar.gz
