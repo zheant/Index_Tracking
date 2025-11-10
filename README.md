@@ -128,9 +128,10 @@ ReplicaTOR has enough CPU headroom to search the much larger solution space.
 
 When ReplicaTOR finishes, the wrapper now saves the medoid assignments to
 `prafa/dist_matrix/dist_matrix.clusters.txt`. The `K` medoid indices still live
-in `dist_matrix.soln.txt`; the companion clusters file is derived from the
-distance matrix after the solve and is therefore free of the all-zero placeholder
-array printed by ReplicaTOR itself.
+in `dist_matrix.soln.txt` (or, on older builds, `dist_matrix.soln`); the wrapper
+accepts both names. The companion clusters file is derived from the distance
+matrix after the solve and is therefore free of the all-zero placeholder array
+printed by ReplicaTOR itself.
 
 ## Troubleshooting large diffs on GitHub
 

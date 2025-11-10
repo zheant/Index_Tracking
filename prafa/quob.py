@@ -174,6 +174,21 @@ class QUOB:
 
         #lire le résultat et le mettre en liste
         solution_path = matrix_stem.with_suffix(".soln.txt")
+        legacy_solution_path = matrix_stem.with_suffix(".soln")
+
+        if not solution_path.exists():
+            if legacy_solution_path.exists():
+                solution_path = legacy_solution_path
+            else:
+                available = ", ".join(
+                    sorted(str(path.name) for path in self.dist_dir.glob("dist_matrix.soln*"))
+                )
+                raise FileNotFoundError(
+                    "ReplicaTOR n'a produit aucun fichier de solution attendu. "
+                    "Fichiers disponibles : "
+                    f"{available or 'aucun'}"
+                )
+
         with open(solution_path, "r", encoding="utf-8") as f:
             ligne = f.read()
 
