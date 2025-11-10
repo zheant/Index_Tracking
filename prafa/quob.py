@@ -87,6 +87,8 @@ class QUOB:
             self.matrix_simplecor()
         else:
             self.matrix_dcor()
+
+        self._write_adjacency_matrix()
         
 
 
@@ -118,6 +120,24 @@ class QUOB:
         distance_matrix = distance_func(corr_matrix)
         matrix_path = self.dist_dir / f"{self.problem_name}.d"
         np.savetxt(matrix_path, Welsch_function(distance_matrix))
+
+    def _write_adjacency_matrix(self) -> None:
+        """Persist a fully connected adjacency matrix for ReplicaTOR.
+
+        The k-medoids formulation solved by ReplicaTOR expects an ``.adj`` file
+        that describes the graph structure associated with the distance matrix.
+        The optimisation we run is over a complete graph, therefore the
+        adjacency matrix simply contains ones everywhere except on the diagonal
+        (no self-loops).  Writing the file explicitly avoids runtime failures
+        when ReplicaTOR loads the problem definition.
+        """
+
+        n = self.stocks_returns.shape[1]
+        adjacency = np.ones((n, n), dtype=int)
+        np.fill_diagonal(adjacency, 0)
+
+        adjacency_path = self.dist_dir / f"{self.problem_name}.adj"
+        np.savetxt(adjacency_path, adjacency, fmt="%d")
 
 
     def stock_picking(self, n):
