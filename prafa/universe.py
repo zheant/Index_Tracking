@@ -33,11 +33,28 @@ class Universe:
         self.df_return_all.set_index("date", inplace=True)
         self.df_return_all.sort_index(inplace=True)
 
-        self.df_index_all = pd.read_csv(index_path)
-        date_column = "Date" if "Date" in self.df_index_all.columns else "date"
-        self.df_index_all[date_column] = pd.to_datetime(self.df_index_all[date_column])
-        self.df_index_all.set_index(date_column, inplace=True)
-        self.df_index_all.sort_index(inplace=True)
+        index_df = pd.read_csv(index_path)
+        date_column = "Date" if "Date" in index_df.columns else "date"
+        index_df[date_column] = pd.to_datetime(index_df[date_column])
+        index_df.set_index(date_column, inplace=True)
+        index_df.sort_index(inplace=True)
+
+        if index_df.empty:
+            raise ValueError(f"Le fichier d'indice est vide : {index_path}")
+
+        value_columns = [col for col in index_df.columns if col not in {date_column}]
+        if len(value_columns) == 0:
+            # All columns were date columns (unlikely but defensive); treat the only column as values.
+            value_series = index_df.squeeze("columns")
+        elif len(value_columns) == 1:
+            value_series = index_df[value_columns[0]]
+        else:
+            raise ValueError(
+                "Le fichier returns_index.csv doit contenir une seule colonne de valeurs. "
+                f"Colonnes détectées : {value_columns}"
+            )
+
+        self.df_index_all = value_series.astype(float)
 
     def update_stock_list(self, current_datetime: datetime | None) -> List[str]:
         """Refresh the list of tradable securities for the requested year."""
@@ -79,7 +96,7 @@ class Universe:
 
         ordered_stocks = [stock for stock in self.df_return_all.columns if stock in valid_stocks]
         returns_slice = self.df_return_all.loc[start:end, ordered_stocks].copy().fillna(0)
-        index_slice = self.df_index_all.loc[start:end].copy().fillna(0).squeeze()
+        index_slice = self.df_index_all.loc[start:end].copy().fillna(0)
 
         common_index = returns_slice.index.intersection(index_slice.index)
         self.df_return = returns_slice.loc[common_index]
