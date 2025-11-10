@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -187,29 +188,44 @@ class QUOB:
         with open(params_path, "w", encoding="utf-8") as f:
             f.write(param)
 
-        subprocess.run([self.replicator_bin.as_posix(), params_path.as_posix()], check=True)
+        completed = subprocess.run(
+            [self.replicator_bin.as_posix(), params_path.as_posix()],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr)
 
         #lire le résultat et le mettre en liste
         solution_path = matrix_stem.with_suffix(".soln.txt")
         legacy_solution_path = matrix_stem.with_suffix(".soln")
 
-        if not solution_path.exists():
-            if legacy_solution_path.exists():
-                solution_path = legacy_solution_path
-            else:
-                available = ", ".join(
-                    sorted(str(path.name) for path in self.dist_dir.glob("dist_matrix.soln*"))
-                )
-                raise FileNotFoundError(
-                    "ReplicaTOR n'a produit aucun fichier de solution attendu. "
-                    "Fichiers disponibles : "
-                    f"{available or 'aucun'}"
-                )
+        medoids: list[int] | None = None
 
-        with open(solution_path, "r", encoding="utf-8") as f:
-            ligne = f.read()
+        if solution_path.exists():
+            with open(solution_path, "r", encoding="utf-8") as f:
+                ligne = f.read()
+            medoids = [int(x) for x in ligne.strip().split() if x]
+        elif legacy_solution_path.exists():
+            with open(legacy_solution_path, "r", encoding="utf-8") as f:
+                ligne = f.read()
+            medoids = [int(x) for x in ligne.strip().split() if x]
+        else:
+            medoids = self._parse_medoids_from_stdout(completed.stdout)
 
-        medoids = [int(x) for x in ligne.strip().split()]
+        if not medoids:
+            available = ", ".join(
+                sorted(str(path.name) for path in self.dist_dir.glob("dist_matrix.soln*"))
+            )
+            raise FileNotFoundError(
+                "ReplicaTOR n'a produit aucun fichier de solution attendu et la sortie ne "
+                "contient pas d'indices de médianoïdes. Fichiers disponibles : "
+                f"{available or 'aucun'}"
+            )
 
         if self.distance_matrix is None:
             self.distance_matrix = np.loadtxt(matrix_stem.with_suffix(".d"))
@@ -219,6 +235,22 @@ class QUOB:
         np.savetxt(cluster_path, cluster_assignments, fmt="%d")
 
         return medoids
+
+    @staticmethod
+    def _parse_medoids_from_stdout(stdout: str | None) -> list[int] | None:
+        if not stdout:
+            return None
+
+        lines = stdout.splitlines()
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("K Medoid Indices"):
+                if idx + 1 < len(lines):
+                    candidates = lines[idx + 1].strip().split()
+                    try:
+                        return [int(token) for token in candidates]
+                    except ValueError:
+                        return None
+        return None
 
 
     def calc_weights(self):
