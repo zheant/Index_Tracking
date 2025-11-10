@@ -72,6 +72,7 @@ class QUOB:
         simple_corr=False,
         replicator_bin: os.PathLike[str] | str | None = None,
         replicator_time_limit: float = 300.0,
+        replicator_cores: int = 1,
     ):
         #matrice et vecteur numpy
         self.stocks_returns = stocks_returns
@@ -83,6 +84,11 @@ class QUOB:
         self.dist_dir.mkdir(parents=True, exist_ok=True)
         self.replicator_bin = _resolve_replicator_bin(replicator_bin)
         self.replicator_time_limit = float(replicator_time_limit)
+        self.replicator_cores = int(replicator_cores)
+        if self.replicator_cores < 1 or self.replicator_cores & (self.replicator_cores - 1) != 0:
+            raise ValueError(
+                "num_cores_per_controller doit être une puissance de deux positive (1, 2, 4, ...)."
+            )
         self.problem_name = "dist_matrix"
 
         #construire ma matrice de distance
@@ -162,7 +168,7 @@ class QUOB:
                 round_limit 100000000 #INT round/iteration limit for search. Search ends if no cost improvement found within a 10000 round window
                 num_replicas_per_controller 32 #INT (POW2 only) number of replicas per parallel tempering controller
                 num_controllers 1 #INT (POW2 only) number of parallel tempering controllers
-                num_cores_per_controller 1 #INT (POW2 only) number of cores/threads to dedicate to each controller
+                num_cores_per_controller {self.replicator_cores} #INT (POW2 only) number of cores/threads to dedicate to each controller
                 ladder_init_mode 2 #INT (0,1,2) parallel tempering ladder init mode. 0->linear spacing b/w t_min & t_max. 1->linear spacing between beta_max and beta_min, then translated to T. 2->exponential spacing between T_min and T_max
                 """
 

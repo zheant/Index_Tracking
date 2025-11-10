@@ -30,6 +30,11 @@ def Main():
                     help='Chemin vers le binaire ReplicaTOR (par défaut ~/or_tool/cmake-build/ReplicaTOR ou la variable REPLICATOR_BIN)')
     parser.add_argument('--replicator_time_limit', type=float, default=300.0,
                     help="Durée maximale (en secondes) accordée à ReplicaTOR pour chaque fenêtre de rebalancement")
+    parser.add_argument('--replicator_cores', type=int, default=1,
+                    help=(
+                        "Nombre de coeurs/threads à dédier à chaque contrôleur ReplicaTOR. "
+                        "Doit être une puissance de deux (1, 2, 4, ...) et ne pas dépasser les vCPU disponibles."
+                    ))
 
 
     #nombre de jours 

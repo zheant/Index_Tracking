@@ -66,6 +66,7 @@ class Solution:
             simple_corr=simple_corr,
             replicator_bin=getattr(self.universe.args, "replicator_bin", None),
             replicator_time_limit=getattr(self.universe.args, "replicator_time_limit", 300.0),
+            replicator_cores=getattr(self.universe.args, "replicator_cores", 1),
         )
         return solver.get_weights()
 

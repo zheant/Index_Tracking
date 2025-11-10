@@ -134,7 +134,8 @@ python main.py \
   --start_date 2014-01-02 \
   --end_date 2023-12-31 \
   --replicator_bin /home/ubuntu/or_tool/ReplicaTOR/cmake-build/ReplicaTOR \
-  --replicator_time_limit 120
+  --replicator_time_limit 120 \
+  --replicator_cores 2
 ```
 
 Adjust the arguments to match your rebalancing schedule and data paths. The same
@@ -151,6 +152,20 @@ in `dist_matrix.soln.txt` (or, on older builds, `dist_matrix.soln`); the wrapper
 accepts both names. The companion clusters file is derived from the distance
 matrix after the solve and is therefore free of the all-zero placeholder array
 printed by ReplicaTOR itself.
+
+When you expose more parallelism with `--replicator_cores`, keep the following
+trade-offs in mind:
+
+* The value must be a power of two (1, 2, 4, ...) and should not exceed the
+  number of vCPUs available on the EC2 instance—otherwise the operating system
+  will time-slice the threads, wasting cycles.
+* Each additional core increases CPU usage proportionally. On burstable or
+  oversubscribed instance families this can lead to throttling; prefer
+  compute-optimised nodes when raising the value beyond 1.
+* ReplicaTOR benefits from more threads only while the annealing loop is
+  compute-bound. If the distance matrix construction or I/O dominates a given
+  run, increasing the core count yields little improvement while still burning
+  extra CPU credits.
 
 ## Troubleshooting large diffs on GitHub
 
