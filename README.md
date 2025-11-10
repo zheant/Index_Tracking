@@ -120,6 +120,12 @@ python main.py \
 Adjust the arguments to match your rebalancing schedule and data paths. The same
 flag works with the correlation-based variant (`quob_cor`).
 
+When ReplicaTOR finishes, the wrapper now saves the medoid assignments to
+`prafa/dist_matrix/dist_matrix.clusters.txt`. The `K` medoid indices still live
+in `dist_matrix.soln.txt`; the companion clusters file is derived from the
+distance matrix after the solve and is therefore free of the all-zero placeholder
+array printed by ReplicaTOR itself.
+
 ## Troubleshooting large diffs on GitHub
 
 If GitHub refuses to display a diff and reports that the generated diff exceeds

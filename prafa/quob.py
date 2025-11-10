@@ -77,6 +77,7 @@ class QUOB:
         self.index_returns = index_returns
         self.K = K #cardinalité!!
         self.idx = None #liste d'indice des stonks choisit
+        self.distance_matrix: np.ndarray | None = None
         self.dist_dir = Path(__file__).resolve().parent / "dist_matrix"
         self.dist_dir.mkdir(parents=True, exist_ok=True)
         self.replicator_bin = _resolve_replicator_bin(replicator_bin)
@@ -105,6 +106,7 @@ class QUOB:
                 dist = 1 - dcor_val
                 dcor_mat[i, j] = dcor_mat[j, i] = Welsch_function(dist) #Welsch_function(dist)
     
+        self.distance_matrix = dcor_mat
         matrix_path = self.dist_dir / f"{self.problem_name}.d"
         np.savetxt(matrix_path, dcor_mat)
 
@@ -118,8 +120,9 @@ class QUOB:
         corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
 
         distance_matrix = distance_func(corr_matrix)
+        self.distance_matrix = Welsch_function(distance_matrix)
         matrix_path = self.dist_dir / f"{self.problem_name}.d"
-        np.savetxt(matrix_path, Welsch_function(distance_matrix))
+        np.savetxt(matrix_path, self.distance_matrix)
 
     def _write_adjacency_matrix(self) -> None:
         """Persist a fully connected adjacency matrix for ReplicaTOR.
@@ -167,13 +170,21 @@ class QUOB:
 
         subprocess.run([self.replicator_bin.as_posix(), params_path.as_posix()], check=True)
 
-
         #lire le résultat et le mettre en liste
         solution_path = matrix_stem.with_suffix(".soln.txt")
         with open(solution_path, "r", encoding="utf-8") as f:
             ligne = f.read()
 
-        return [int(x) for x in ligne.strip().split()]
+        medoids = [int(x) for x in ligne.strip().split()]
+
+        if self.distance_matrix is None:
+            self.distance_matrix = np.loadtxt(matrix_stem.with_suffix(".d"))
+
+        cluster_assignments = np.argmin(self.distance_matrix[:, medoids], axis=1)
+        cluster_path = matrix_stem.with_suffix(".clusters.txt")
+        np.savetxt(cluster_path, cluster_assignments, fmt="%d")
+
+        return medoids
 
 
     def calc_weights(self):
