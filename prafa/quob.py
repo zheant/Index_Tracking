@@ -71,6 +71,7 @@ class QUOB:
         K,
         simple_corr=False,
         replicator_bin: os.PathLike[str] | str | None = None,
+        replicator_time_limit: float = 300.0,
     ):
         #matrice et vecteur numpy
         self.stocks_returns = stocks_returns
@@ -81,6 +82,7 @@ class QUOB:
         self.dist_dir = Path(__file__).resolve().parent / "dist_matrix"
         self.dist_dir.mkdir(parents=True, exist_ok=True)
         self.replicator_bin = _resolve_replicator_bin(replicator_bin)
+        self.replicator_time_limit = float(replicator_time_limit)
         self.problem_name = "dist_matrix"
 
         #construire ma matrice de distance
@@ -156,7 +158,7 @@ class QUOB:
                 cost_answer -1000000 #FLOAT32 target cost to allow program to exit early if found, set to large neg value if you don't want an early exit
                 T_max 0.01 #FLOAT32 parallel tempering max temperature
                 T_min 0.00001 #FLOAT32 parallel tempering min temperature
-                time_limit 300.0 #FLOAT64 time limit for search in seconds
+                time_limit {self.replicator_time_limit} #FLOAT64 time limit for search in seconds
                 round_limit 100000000 #INT round/iteration limit for search. Search ends if no cost improvement found within a 10000 round window
                 num_replicas_per_controller 32 #INT (POW2 only) number of replicas per parallel tempering controller
                 num_controllers 1 #INT (POW2 only) number of parallel tempering controllers
