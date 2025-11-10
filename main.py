@@ -26,6 +26,9 @@ def Main():
     parser.add_argument('--index', type=str,
                     default='sp500')#, choice=['sp500', 'russel, nikkei])
 
+    parser.add_argument('--replicator_bin', type=str, default=None,
+                    help='Chemin vers le binaire ReplicaTOR (par défaut ~/or_tool/cmake-build/ReplicaTOR ou la variable REPLICATOR_BIN)')
+
 
     #nombre de jours 
     parser.add_argument('--T', type=int, default=3, help="nombre d'année pour l'entrainement")
