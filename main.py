@@ -26,10 +26,27 @@ def Main():
     parser.add_argument('--index', type=str,
                     default='sp500')#, choice=['sp500', 'russel, nikkei])
 
+    parser.add_argument(
+        '--replicator_cores',
+        type=int,
+        default=1,
+        help='Nombre de cœurs à allouer par contrôleur ReplicaTOR (puissance de 2).'
+    )
+
+    parser.add_argument('--replicator_bin', type=str, default=None,
+                    help='Chemin vers le binaire ReplicaTOR (par défaut ~/or_tool/cmake-build/ReplicaTOR ou la variable REPLICATOR_BIN)')
+    parser.add_argument('--replicator_time_limit', type=float, default=300.0,
+                    help="Durée maximale (en secondes) accordée à ReplicaTOR pour chaque fenêtre de rebalancement")
+
 
     #nombre de jours 
     parser.add_argument('--T', type=int, default=3, help="nombre d'année pour l'entrainement")
     parser.add_argument('--rebalancing', type=int, default=12, help="Month increment for rebalancing")
+    parser.add_argument(
+        '--filter_inactive',
+        action='store_true',
+        help="Supprime les titres inactifs ou constants avant l'optimisation (désactivé par défaut).",
+    )
     args = parser.parse_args()
     
   
@@ -41,22 +58,38 @@ def Main():
     #pour le rebalancement
     time_increment = relativedelta(months=args.rebalancing)
 
-    #liste des dates de rebalancement
-    start_date = pd.to_datetime(args.start_date)
+    #initialisation des object necessaire pour extraire les portefeuilles dans le temps
+    universe = Universe(args)
+    portfolio = Portfolio(universe)
+
+    data_start = universe.get_data_start_date()
+
+    # With a rolling window of ``T`` years we need at least that amount of
+    # history before the first rebalance can take place.  Otherwise the
+    # training slice collapses to a single day which in turn removes every
+    # security during the variance screening stage.
+    earliest_rebalance = data_start + portfolio_duration
+
+    start_date = max(pd.to_datetime(args.start_date), earliest_rebalance)
     end_date = pd.to_datetime(args.end_date)
-    
-    # Construire la liste des dates
+
+    if start_date >= end_date:
+        raise ValueError(
+            "La période disponible est insuffisante pour un rebalance : "
+            "ajustez --start_date/--end_date ou réduisez la fenêtre --T."
+        )
+
     dates = [start_date]
     current_date = start_date + time_increment
 
     while current_date < end_date:
         dates.append(current_date)
         current_date += time_increment
-    
-    #initialisation des object necessaire pour extraire les portefeuilles dans le temps
-    portfolio = Portfolio(Universe(args))
+
     for rebalancing_date in dates:
         start_datetime = rebalancing_date - portfolio_duration
+        if start_datetime < data_start:
+            start_datetime = data_start
         portfolio.rebalance_portfolio(start_datetime, rebalancing_date)
         print(f"Rebalancing from {start_datetime.date()} to {rebalancing_date.date()}")
 
