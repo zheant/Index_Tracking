@@ -177,8 +177,11 @@ class QUOB:
         return welsch_input
 
     def _compute_corr_distance(self) -> np.ndarray:
-        corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
+
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        np.fill_diagonal(corr_matrix, 1.0)
 
         distance_func = lambda di: np.sqrt(np.maximum(0.0, 0.5 * (1 - di)))
         distance_matrix = distance_func(corr_matrix)
