@@ -80,6 +80,9 @@ def _validate_replicator_cores(value: int) -> int:
     return value
 
 
+MAX_DCOR_ASSETS: Final[int] = 400
+
+
 class QUOB:
     def __init__(
         self,
@@ -132,16 +135,23 @@ class QUOB:
                 "Ajustez les paramètres --start_date ou --T pour disposer d'un historique exploitable."
             )
 
-        try:
-            distance_matrix = self._compute_dcor_matrix(n_assets)
-        except Exception as exc:  # pragma: no cover - dépend du backend dcor
+        if n_assets > MAX_DCOR_ASSETS:
             print(
-                "⚠️ Échec du calcul de la distance de corrélation (dcor). Passage à la corrélation de Pearson.",
-                f"Raison : {exc}",
+                "⚠️ Taille de l'univers trop importante pour dcor "
+                f"({n_assets} titres). Passage direct à la corrélation de Pearson pour accélérer le calcul."
             )
             distance_matrix = self._compute_corr_distance()
         else:
-            distance_matrix = _welsch(distance_matrix)
+            try:
+                distance_matrix = self._compute_dcor_matrix(n_assets)
+            except Exception as exc:  # pragma: no cover - dépend du backend dcor
+                print(
+                    "⚠️ Échec du calcul de la distance de corrélation (dcor). Passage à la corrélation de Pearson.",
+                    f"Raison : {exc}",
+                )
+                distance_matrix = self._compute_corr_distance()
+            else:
+                distance_matrix = _welsch(distance_matrix)
 
         self.distance_matrix = distance_matrix
         matrix_path = self.dist_dir / f"{self.problem_name}.d"
@@ -170,7 +180,7 @@ class QUOB:
         corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
-        distance_func = lambda di: np.sqrt(0.5 * (1 - di))
+        distance_func = lambda di: np.sqrt(np.maximum(0.0, 0.5 * (1 - di)))
         distance_matrix = distance_func(corr_matrix)
         return 1 - np.exp(-0.5 * distance_matrix)
 
