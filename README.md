@@ -90,39 +90,6 @@ Re-run the script whenever you add more constituent files or need to refresh
 the data window. Pass `--skip-index` if you plan to supply a different index
 return series manually.
 
-## Analysing Russell 2000 portfolios
-
-Once the optimisation has produced a pickled portfolio file under `results/`,
-use `scripts/analyze_portfolio.py` to recreate the dashboards that were
-previously built in `analyses_resultats.ipynb`. The helper loads the stored
-weights, rebuilds the out-of-sample returns between each pair of rebalancing
-dates, and exports both the figures and the underlying time series.
-
-```bash
-cd ~/Index_Tracking
-source .venv/bin/activate
-python scripts/analyze_portfolio.py \
-  --index russel2000 \
-  --portfolio quob=results/portfolio_russel2000_quob_300.json \
-  --start-date 2014-01-02 \
-  --end-date 2023-12-31 \
-  --output-dir analyses/russel2000
-```
-
-You can pass `--portfolio` multiple times (for example `gurobi=...`) to compare
-several optimisation methods side by side. Each run writes:
-
-* `analyses/<label>/returns.csv` – daily portfolio and index returns for the
-  backtest window.
-* `analyses/<label>/tracking_error.csv` – tracking error measured on each
-  out-of-sample window.
-* `analyses/<label>/absolute_error.csv` – mean absolute tracking error per
-  window.
-* `analyses/cumulative_returns.png`, `absolute_differences.png` and
-  `error_distribution.png` – the key plots used during the S&P 500 analysis.
-* `analyses/summary_metrics.csv` – a compact table with the main statistics for
-  every portfolio analysed.
-
 ## Choosing an EC2 instance type for ReplicaTOR
 
 The Russell 2000 workflow is CPU bound: building distance matrices is
@@ -200,6 +167,40 @@ printed by ReplicaTOR itself. If you set `--replicator_cores` to a power of two
 greater than one, the generated `.params` file reflects that choice so ReplicaTOR
 can spawn additional worker threads (subject to the compiled binary supporting
 multi-threading on the target instance).
+
+## Analysing Russell 2000 portfolios
+
+After ReplicaTOR (or an alternative solver) has produced a portfolio snapshot
+under `results/`, use `scripts/analyze_portfolio.py` to recreate the dashboards
+previously built in `analyses_resultats.ipynb`. The helper consumes the weights
+generated during rebalancing, rebuilds the out-of-sample returns between each
+pair of rebalance dates, and exports both the figures and the underlying time
+series.
+
+```bash
+cd ~/Index_Tracking
+source .venv/bin/activate
+python scripts/analyze_portfolio.py \
+  --index russel2000 \
+  --portfolio quob=results/portfolio_russel2000_quob_300.json \
+  --start-date 2014-01-02 \
+  --end-date 2023-12-31 \
+  --output-dir analyses/russel2000
+```
+
+You can pass `--portfolio` multiple times (for example `gurobi=...`) to compare
+several optimisation methods side by side. Each run writes:
+
+* `analyses/<label>/returns.csv` – daily portfolio and index returns for the
+  backtest window.
+* `analyses/<label>/tracking_error.csv` – tracking error measured on each
+  out-of-sample window.
+* `analyses/<label>/absolute_error.csv` – mean absolute tracking error per
+  window.
+* `analyses/cumulative_returns.png`, `absolute_differences.png` and
+  `error_distribution.png` – the key plots used during the S&P 500 analysis.
+* `analyses/summary_metrics.csv` – a compact table with the main statistics for
+  every portfolio analysed.
 
 ## Troubleshooting large diffs on GitHub
 
