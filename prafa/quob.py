@@ -190,7 +190,7 @@ class QUOB:
 
         completed = subprocess.run(
             [self.replicator_bin.as_posix(), params_path.as_posix()],
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
@@ -217,10 +217,26 @@ class QUOB:
         else:
             medoids = self._parse_medoids_from_stdout(completed.stdout)
 
-        if not medoids:
+        if medoids:
+            if completed.returncode != 0:
+                message = (
+                    "ReplicaTOR s'est terminé de manière inattendue (code de sortie "
+                    f"{completed.returncode}), mais les indices de médianoïdes ont pu "
+                    "être récupérés depuis la sortie standard."
+                )
+                print(message, file=sys.stderr)
+        else:
             available = ", ".join(
                 sorted(str(path.name) for path in self.dist_dir.glob("dist_matrix.soln*"))
             )
+            if completed.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    completed.returncode,
+                    completed.args,
+                    output=completed.stdout,
+                    stderr=completed.stderr,
+                )
+
             raise FileNotFoundError(
                 "ReplicaTOR n'a produit aucun fichier de solution attendu et la sortie ne "
                 "contient pas d'indices de médianoïdes. Fichiers disponibles : "
