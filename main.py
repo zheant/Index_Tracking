@@ -53,22 +53,27 @@ def Main():
     #pour le rebalancement
     time_increment = relativedelta(months=args.rebalancing)
 
+    #initialisation des object necessaire pour extraire les portefeuilles dans le temps
+    universe = Universe(args)
+    portfolio = Portfolio(universe)
+
+    data_start = universe.get_data_start_date()
+
     #liste des dates de rebalancement
-    start_date = pd.to_datetime(args.start_date)
+    start_date = max(pd.to_datetime(args.start_date), data_start)
     end_date = pd.to_datetime(args.end_date)
-    
-    # Construire la liste des dates
+
     dates = [start_date]
     current_date = start_date + time_increment
 
     while current_date < end_date:
         dates.append(current_date)
         current_date += time_increment
-    
-    #initialisation des object necessaire pour extraire les portefeuilles dans le temps
-    portfolio = Portfolio(Universe(args))
+
     for rebalancing_date in dates:
         start_datetime = rebalancing_date - portfolio_duration
+        if start_datetime < data_start:
+            start_datetime = data_start
         portfolio.rebalance_portfolio(start_datetime, rebalancing_date)
         print(f"Rebalancing from {start_datetime.date()} to {rebalancing_date.date()}")
 

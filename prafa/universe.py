@@ -14,6 +14,15 @@ class Universe:
         self.args = args
         self._load_time_series()
 
+        self.first_available_date = max(
+            self.df_return_all.index.min(),
+            self.df_index_all.index.min(),
+        )
+        self.initial_year = max(
+            pd.Timestamp(self.args.start_date).year,
+            self.first_available_date.year,
+        )
+
         self.df_return = pd.DataFrame()
         self.df_index = pd.Series(dtype=float)
         self.year: int | None = None
@@ -69,7 +78,7 @@ class Universe:
 
         if current_datetime is None:
             # Initial load when the universe is created.
-            self.year = int(self.args.start_date[:4])
+            self.year = self.initial_year
             self.stock_list = load_year(self.year)
         elif current_datetime.year != self.year:
             self.year = current_datetime.year
@@ -78,7 +87,7 @@ class Universe:
         return self.stock_list
 
     def new_universe(self, start_datetime: datetime, end_datetime: datetime, training: bool = True) -> None:
-        start = pd.Timestamp(start_datetime)
+        start = max(pd.Timestamp(start_datetime), self.first_available_date)
         end = pd.Timestamp(end_datetime)
 
         if training:
@@ -108,6 +117,9 @@ class Universe:
 
     def get_index_returns(self) -> pd.Series:
         return pd.Series(self.df_index, index=self.df_return.index)
+
+    def get_data_start_date(self) -> pd.Timestamp:
+        return self.first_available_date
 
     def get_stock_namme_in_order(self) -> List[str]:  # noqa: D401 - kept for backward compatibility.
         return self.df_return.columns.tolist()
