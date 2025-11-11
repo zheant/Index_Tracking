@@ -30,6 +30,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable
 
+# Permet d'exécuter le script directement (``python scripts/analyze_portfolio.py``)
+# sans devoir ajouter manuellement la racine du dépôt au PYTHONPATH.
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
