@@ -1,7 +1,7 @@
-"""Utility helpers to stage Russell 2000 constituent files for the pipeline.
+"""Utility helpers to stage Russell 3000 constituent files for the pipeline.
 
-The historical Russell 2000 compositions that were added to the repository live
-under ``composition historique russel2000`` and only contain a single ``permno``
+The historical Russell 3000 compositions that were added to the repository live
+under ``composition historique russel3000`` and only contain a single ``permno``
 column.  The portfolio construction code expects to find per-year constituent
 files under ``financial_data/<index>/constituants`` with the identifiers stored
 as strings.  This script copies the raw CSVs into the expected location while
@@ -27,17 +27,17 @@ import pandas as pd
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare Russell 2000 constituent files")
+    parser = argparse.ArgumentParser(description="Prepare Russell 3000 constituent files")
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path("composition historique russel2000"),
-        help="Folder containing the raw Russell 2000 CSV files (default: %(default)s)",
+        default=Path("composition historique russel3000"),
+        help="Folder containing the raw Russell 3000 CSV files (default: %(default)s)",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("financial_data/russel2000/constituants"),
+        default=Path("financial_data/russel3000/constituants"),
         help="Destination folder for the normalised constituent files (default: %(default)s)",
     )
     parser.add_argument(

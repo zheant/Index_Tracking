@@ -2,7 +2,7 @@
 
 Ce module reproduit les visualisations et statistiques exploratoires qui
 étaient produites dans ``analyses_resultats.ipynb`` afin de les rendre
-reproductibles pour n'importe quel indice (par exemple le Russell 2000).
+reproductibles pour n'importe quel indice (par exemple le Russell 3000).
 
 Utilisation rapide
 ------------------
@@ -11,11 +11,11 @@ Utilisation rapide
 
     source .venv/bin/activate
     python scripts/analyze_portfolio.py \
-        --index russel2000 \
-        --portfolio quob=results/portfolio_russel2000_quob_300.json \
+        --index russel3000 \
+        --portfolio quob=results/portfolio_russel3000_quob_300.json \
         --start-date 2014-01-02 \
         --end-date 2023-12-31 \
-        --output-dir analyses/russel2000
+        --output-dir analyses/russel3000
 
 Le script charge le portefeuille (fichier ``pickle`` produit par
 ``Portfolio.save_portfolio``), reconstruit les rendements hors-échantillon,
@@ -322,7 +322,7 @@ def parse_arguments() -> argparse.Namespace:
         required=True,
         help="Chemins vers les portefeuilles à analyser, sous la forme nom=chemin",
     )
-    parser.add_argument("--index", default="russel2000", help="Nom de l'indice analysé")
+    parser.add_argument("--index", default="russel3000", help="Nom de l'indice analysé")
     parser.add_argument(
         "--start-date",
         default="2014-01-02",

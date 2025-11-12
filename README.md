@@ -1,11 +1,11 @@
-# Russell 2000 staging helpers
+# Russell 3000 staging helpers
 
-This repository contains utility code that helps adapt the original S&P 500 index-tracking workflow to the Russell 2000 universe.
+This repository contains utility code that helps adapt the original S&P 500 index-tracking workflow to the Russell 3000 universe.
 
 ## Preparing constituent lists
 
-Historical Russell 2000 composition files (one CSV per year) should live under the
-`composition historique russel2000/` directory. Each CSV must contain a single
+Historical Russell 3000 composition files (one CSV per year) should live under the
+`composition historique russel3000/` directory. Each CSV must contain a single
 column named `permno` with the identifiers that belong to the index for that year.
 
 Run the helper script to normalise those files into the structure expected by the
@@ -14,8 +14,8 @@ pipeline and to generate the union of all observed identifiers:
 ```bash
 source .venv/bin/activate
 python scripts/prepare_russell_constituents.py \
-  --source "composition historique russel2000" \
-  --output "financial_data/russel2000/constituants"
+  --source "composition historique russel3000" \
+  --output "financial_data/russel3000/constituants"
 ```
 
 The script copies each yearly CSV into the output directory (sorting and
@@ -31,17 +31,17 @@ CSV if you need multiple universes side by side.
 ## Quick command recap
 
 Copy/paste the following block on the EC2 instance (with the repository cloned)
-to stage the Russell 2000 constituent universe and review the generated files:
+to stage the Russell 3000 constituent universe and review the generated files:
 
 ```bash
 cd ~/Index_Tracking
 source .venv/bin/activate
 python scripts/prepare_russell_constituents.py \
-  --source "composition historique russel2000" \
-  --output "financial_data/russel2000/constituants"
+  --source "composition historique russel3000" \
+  --output "financial_data/russel3000/constituants"
 
-ls financial_data/russel2000/constituants
-head -n 5 financial_data/russel2000/constituants/all_permnos.csv
+ls financial_data/russel3000/constituants
+head -n 5 financial_data/russel3000/constituants/all_permnos.csv
 ```
 
 The `ls` and `head` commands confirm that the per-year CSVs and the aggregated
@@ -66,19 +66,19 @@ Then run the helper script (change the dates if you need a different window):
 cd ~/Index_Tracking
 source .venv/bin/activate
 python scripts/download_wrds_russell_data.py \
-  --permno-csv financial_data/russel2000/constituants/all_permnos.csv \
+  --permno-csv financial_data/russel3000/constituants/all_permnos.csv \
   --start-date 2014-01-01 \
   --end-date 2023-12-31
 ```
 
 You will be prompted for your WRDS credentials. The script stores two files
-under `financial_data/russel2000/`:
+under `financial_data/russel3000/`:
 
 * `returns_stocks.csv` — wide matrix of daily returns with one column per
   permno.
 * `returns_index.csv` — an equal-weight benchmark constructed from the same
   universe (serves as a proxy index if you do not have the official Russell
-  2000 total-return series).
+  3000 total-return series).
 
 If you see an authentication error (for example *“PAM authentication failed”*),
 double-check your username/password, make sure any required institutional VPN is
@@ -92,7 +92,7 @@ return series manually.
 
 ## Choosing an EC2 instance type for ReplicaTOR
 
-The Russell 2000 workflow is CPU bound: building distance matrices is
+The Russell 3000 workflow is CPU bound: building distance matrices is
 `O(n^2)` and ReplicaTOR spends most of its time in simulated annealing.
 For good turnaround times:
 
@@ -128,7 +128,7 @@ Example command line:
 
 ```bash
 python main.py \
-  --index russel2000 \
+  --index russel3000 \
   --solution_name quob \
   --cardinality 30 \
   --start_date 2014-01-02 \
@@ -168,7 +168,7 @@ greater than one, the generated `.params` file reflects that choice so ReplicaTO
 can spawn additional worker threads (subject to the compiled binary supporting
 multi-threading on the target instance).
 
-## Analysing Russell 2000 portfolios
+## Analysing Russell 3000 portfolios
 
 After ReplicaTOR (or an alternative solver) has produced a portfolio snapshot
 under `results/`, use `scripts/analyze_portfolio.py` to recreate the dashboards
@@ -181,11 +181,11 @@ series.
 cd ~/Index_Tracking
 source .venv/bin/activate
 python scripts/analyze_portfolio.py \
-  --index russel2000 \
-  --portfolio quob=results/portfolio_russel2000_quob_300.json \
+  --index russel3000 \
+  --portfolio quob=results/portfolio_russel3000_quob_300.json \
   --start-date 2014-01-02 \
   --end-date 2023-12-31 \
-  --output-dir analyses/russel2000
+  --output-dir analyses/russel3000
 ```
 
 You can pass `--portfolio` multiple times (for example `gurobi=...`) to compare
