@@ -174,7 +174,45 @@ The project also exposes a mixed-integer baseline solved with Gurobi so you can
 benchmark QUOB against a deterministic optimiser. Install `gurobipy` inside the
 virtual environment (for example via the `pip install` script shipped with the
 Gurobi distribution) and make sure the licence has been activated on the EC2
-instance (`grbgetkey` or a floating licence).
+instance.
+
+### Activating a Gurobi licence on the instance
+
+*Standalone and token licences.* If your institution provides a node-locked or
+floating token licence, run `grbgetkey` from the `gurobi1200/linux64/bin`
+directory (adjust the path if you unpacked Gurobi elsewhere). The tool will
+prompt for the host details and write `~/gurobi.lic` by default. Add the
+following lines to `~/.bashrc` (or the shell profile you use) so that the Gurobi
+libraries and licence are discovered automatically when you reconnect via SSH:
+
+```bash
+export GUROBI_HOME=~/Index_Tracking/gurobi1200/linux64
+export PATH="$GUROBI_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$GUROBI_HOME/lib:$LD_LIBRARY_PATH"
+# Only required if you stored the licence somewhere other than $HOME
+export GRB_LICENSE_FILE=~/gurobi.lic
+```
+
+*WLS Compute Server licences.* If you received Web Licence Service (WLS)
+credentials (an Access ID, a Secret Key, and a Licence ID), `grbgetkey` is not
+used. Instead, define the environment variables expected by the WLS client
+before launching Python or `gurobi_cl`:
+
+```bash
+export GUROBI_HOME=~/Index_Tracking/gurobi1200/linux64
+export PATH="$GUROBI_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$GUROBI_HOME/lib:$LD_LIBRARY_PATH"
+export GRB_WLSACCESSID=<your-access-id>
+export GRB_WLSSECRET=<your-secret-key>
+export GRB_LICENSEID=<your-licence-id>
+```
+
+Replace the placeholders with the values listed in the Gurobi portal (for
+example for a “WLS Compute Server – Temporary Academic” entitlement). The
+variables must be present in every shell session where you import `gurobipy`.
+Once they are exported you can verify the setup with `gurobi_cl --version` or by
+running `python -c "import gurobipy"`; both commands should succeed without
+errors.
 
 Launch the binary quadratic formulation with:
 
