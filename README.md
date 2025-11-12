@@ -235,6 +235,32 @@ subsequent continuous reweighting step can still proceed. Adjust
 searches. Any `GurobiError` raised during the solve is rethrown with a concise
 message so you can troubleshoot licence or model issues quickly.
 
+#### Troubleshooting licence errors
+
+If you still see messages such as *“Restricted license – for non-production use
+only”* or *“Model too large for size-limited license”* when running the
+portfolio optimisation, Python is falling back to the miniature licence bundled
+with the `pip`/`conda` wheels. Double-check the following before re-running the
+solver:
+
+* Run `gurobi_cl --version` (or `python -c "import gurobipy; print(gurobipy.gurobi.version())"`).
+  The command must succeed without printing the “restricted licence” banner. If
+  it does, the environment variables or licence file are either missing or not
+  visible in your current shell session.
+* For WLS licences, ensure that `GRB_WLSACCESSID`, `GRB_WLSSECRET` and
+  `GRB_LICENSEID` are exported **before** activating the virtual environment or
+  launching Python. For node-locked or token licences, make sure the
+  `gurobi.lic` file lives in `$HOME` (or that `GRB_LICENSE_FILE` points to the
+  correct path).
+* If you rotated credentials in the Gurobi portal, refresh the environment
+  variables or download a fresh `gurobi.lic` with `grbgetkey` before the next
+  run.
+
+Only once `gurobi_cl --version` reports your full licence (without the
+“restricted” banner) should you launch the Russell 3000 optimisation; otherwise
+the solver will abort as soon as the model exceeds the size limits of the demo
+licence.
+
 ## Analysing Russell 3000 portfolios
 
 After ReplicaTOR (or an alternative solver) has produced a portfolio snapshot
