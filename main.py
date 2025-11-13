@@ -44,6 +44,15 @@ def Main():
         default=10800.0,
         help="Durée maximale (en secondes) accordée à Gurobi pour chaque fenêtre de rebalancement",
     )
+    parser.add_argument(
+        '--gurobi_log_dir',
+        type=str,
+        default='logs',
+        help=(
+            "Répertoire dans lequel stocker les journaux détaillés de Gurobi. "
+            "Laissez vide pour désactiver la sauvegarde automatique."
+        ),
+    )
 
 
     #nombre de jours 
@@ -93,14 +102,19 @@ def Main():
         dates.append(current_date)
         current_date += time_increment
 
-    for rebalancing_date in dates:
+    total_rebalances = len(dates)
+
+    for idx, rebalancing_date in enumerate(dates, start=1):
         start_datetime = rebalancing_date - portfolio_duration
         if start_datetime < data_start:
             start_datetime = data_start
+        print(
+            f"🔁 Rebalancement {idx}/{total_rebalances} : "
+            f"fenêtre {start_datetime.date()} → {rebalancing_date.date()}"
+        )
         portfolio.rebalance_portfolio(start_datetime, rebalancing_date)
-        print(f"Rebalancing from {start_datetime.date()} to {rebalancing_date.date()}")
 
-    
+
     return None
 
 

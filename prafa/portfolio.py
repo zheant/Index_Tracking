@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 from datetime import datetime
+import time
 from typing import Dict, TYPE_CHECKING
 
 import numpy as np
@@ -24,8 +25,15 @@ class Portfolio:
     def rebalance_portfolio(self, start_datetime: datetime, end_datetime: datetime) -> np.ndarray:
         """Recompute the portfolio weights for the requested time window."""
         self.universe.new_universe(start_datetime, end_datetime)
-        solution = Solution(self)
+        solution = Solution(self, start_datetime, end_datetime)
+        start_ts = time.perf_counter()
         self.portfolios[end_datetime] = solution.solve()
+        elapsed = time.perf_counter() - start_ts
+        print(
+            "✅ Fenêtre optimisée :",
+            f"{start_datetime.date()} → {end_datetime.date()}",
+            f"(durée {elapsed / 3600:.2f} h)",
+        )
         return self.portfolios[end_datetime]
 
     def get_universe(self) -> Universe:
@@ -48,11 +56,13 @@ class Portfolio:
 class Solution:
     """Wrapper around the optimisation solvers supported by the project."""
 
-    def __init__(self, portfolio: Portfolio) -> None:
+    def __init__(self, portfolio: Portfolio, start_datetime: datetime, end_datetime: datetime) -> None:
         self.portfolio = portfolio
         self.universe = portfolio.get_universe()
         self.solution_name = self.universe.args.solution_name
         self.cardinality = self.universe.args.cardinality
+        self.start_datetime = start_datetime
+        self.end_datetime = end_datetime
 
         # numpy arrays expected by the solvers
         self.stocks_returns = self.universe.get_stocks_returns().values
@@ -79,12 +89,15 @@ class Solution:
                 "Veuillez installer Gurobi avant d'utiliser cette option."
             ) from exc
 
+        window_label = f"{self.start_datetime.date()}_{self.end_datetime.date()}"
         solver = Gurobi(
             self.stocks_returns,
             self.index_returns,
             self.cardinality,
             simple_corr=simple_corr,
             time_limit=getattr(self.universe.args, "gurobi_time_limit", 10800.0),
+            log_dir=getattr(self.universe.args, "gurobi_log_dir", None),
+            log_label=window_label,
         )
         return solver.get_weights()
 

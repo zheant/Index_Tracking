@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Final
 
 import dcor
@@ -39,6 +41,8 @@ class Gurobi:
         K: int,
         simple_corr: bool = False,
         time_limit: float = 10800.0,
+        log_dir: str | None = None,
+        log_label: str | None = None,
     ) -> None:
         if K <= 0:
             raise ValueError("La cardinalité doit être strictement positive.")
@@ -52,6 +56,9 @@ class Gurobi:
         self.idx: list[int] | None = None
         self.distance_matrix: np.ndarray | None = None
         self._env = self._create_env()
+        self.last_runtime: float | None = None
+        self.last_status: str | None = None
+        self.log_path = self._prepare_log_path(log_dir, log_label)
 
     # ------------------------------------------------------------------
     # Matrices de distance
@@ -161,6 +168,8 @@ class Gurobi:
         model.Params.OutputFlag = 1
         model.Params.TimeLimit = self.time_limit
         model.Params.NonConvex = 2
+        if self.log_path is not None:
+            model.Params.LogFile = self.log_path.as_posix()
 
         z = model.addMVar(n, vtype=GRB.BINARY, name="z")
 
@@ -181,6 +190,8 @@ class Gurobi:
 
             status = model.Status
             status_name = _status_name(status)
+            self.last_status = status_name
+            self.last_runtime = getattr(model, "Runtime", None)
 
             if status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.SUBOPTIMAL):
                 if model.SolCount == 0:
@@ -200,6 +211,21 @@ class Gurobi:
                     "Gurobi s'est arrêté avec le statut "
                     f"{status_name}. Consultez les logs ci-dessus pour plus de détails."
                 )
+
+            runtime_msg = (
+                f"{self.last_runtime / 3600:.2f} h"
+                if self.last_runtime is not None
+                else "durée inconnue"
+            )
+            best_obj = model.ObjVal if model.SolCount > 0 else float("nan")
+            print(
+                "⏱️ Gurobi terminé :",
+                status_name,
+                f"en {runtime_msg}",
+                f"(objectif {best_obj:.6f})",
+            )
+            if self.log_path is not None:
+                print(f"📄 Journal complet : {self.log_path}")
 
             solution = z.X.copy()
             return solution
@@ -299,3 +325,19 @@ class Gurobi:
             ) from exc
 
         return env
+
+    def _prepare_log_path(self, log_dir: str | None, log_label: str | None) -> Path | None:
+        if not log_dir:
+            return None
+
+        base = Path(log_dir).expanduser()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        label = (log_label or "window").replace("/", "-").replace(" ", "_")
+        filename = f"gurobi_{label}_{timestamp}.log"
+
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+
+        return base / filename

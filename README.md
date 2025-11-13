@@ -223,7 +223,8 @@ python main.py \
   --cardinality 300 \
   --start_date 2014-01-02 \
   --end_date 2023-12-31 \
-  --gurobi_time_limit 10800
+  --gurobi_time_limit 10800 \
+  --gurobi_log_dir logs/gurobi
 ```
 
 Each rebalance window receives a three-hour time budget by default (10 800 s).
@@ -233,7 +234,33 @@ the time limit, the best incumbent solution is kept automatically so that the
 subsequent continuous reweighting step can still proceed. Adjust
 `--gurobi_time_limit` if you need shorter experiments or, conversely, longer
 searches. Any `GurobiError` raised during the solve is rethrown with a concise
-message so you can troubleshoot licence or model issues quickly.
+message so you can troubleshoot licence or model issues quickly. The optional
+`--gurobi_log_dir` flag lets you persist the full solver transcript even if your
+SSH session ends; each window writes its own `gurobi_<start>_<end>_<timestamp>.log`
+file inside the requested directory and the path is echoed at the end of the
+window so you can `tail -f` it later.
+
+### Monitoring long optimisation runs
+
+Long Russell 3000 runs can last several hours per window, especially when both
+ReplicaTOR and Gurobi are given the full three-hour budget. To avoid restarting
+from scratch after a network hiccup:
+
+1. Launch a `tmux` session before starting the optimisation:
+
+   ```bash
+   ssh -i ~/.ssh/id_ed25519 ubuntu@<ip>
+   tmux new -s portfolio
+   ```
+
+2. Run the usual `python main.py ...` command inside that session.
+3. Detach with `Ctrl+b` then `d`; reattach later via `tmux attach -t portfolio`.
+
+Even without `tmux`, the log files generated via `--gurobi_log_dir` record every
+iteration so you can inspect what happened just before a disconnect. Remember
+that each rebalance window launches a brand new Gurobi instance, so the solver
+timer resets to zero at the beginning of every window; this is expected and does
+not mean the entire pipeline restarted from scratch.
 
 #### Troubleshooting licence errors
 
