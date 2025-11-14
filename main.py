@@ -60,9 +60,17 @@ def Main():
     parser.add_argument('--rebalancing', type=int, default=12, help="Month increment for rebalancing")
     parser.add_argument(
         '--filter_inactive',
+        dest='filter_inactive',
         action='store_true',
-        help="Supprime les titres inactifs ou constants avant l'optimisation (désactivé par défaut).",
+        help="Supprime les titres inactifs ou constants avant l'optimisation (activé par défaut).",
     )
+    parser.add_argument(
+        '--keep_inactive',
+        dest='filter_inactive',
+        action='store_false',
+        help="Conserve les titres inactifs ou constants dans l'univers (comportement précédent).",
+    )
+    parser.set_defaults(filter_inactive=True)
     args = parser.parse_args()
     
   
