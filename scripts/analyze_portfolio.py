@@ -92,6 +92,7 @@ def _build_namespace(args: argparse.Namespace) -> argparse.Namespace:
     namespace.cardinality = args.cardinality
     namespace.start_date = args.start_date
     namespace.end_date = args.end_date
+    namespace.filter_inactive = args.filter_inactive
     return namespace
 
 
@@ -365,6 +366,19 @@ def parse_arguments() -> argparse.Namespace:
         default="quob",
         help="Nom de la solution utilisé pour initialiser Universe",
     )
+    parser.add_argument(
+        "--filter-inactive",
+        dest="filter_inactive",
+        action="store_true",
+        help="Supprime les titres inactifs/constantes comme lors de l'optimisation (par défaut)",
+    )
+    parser.add_argument(
+        "--keep-inactive",
+        dest="filter_inactive",
+        action="store_false",
+        help="Conserve les titres inactifs pour analyser un portefeuille généré sans filtrage",
+    )
+    parser.set_defaults(filter_inactive=True)
     parser.add_argument(
         "--output-dir",
         default="analyses",
