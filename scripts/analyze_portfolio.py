@@ -121,26 +121,28 @@ def _load_portfolios(path: Path) -> PortfolioFile:
     with open(path, "rb") as handle:
         raw = pickle.load(handle)
 
-    metadata: dict = {}
-    snapshots_source = raw
-    if isinstance(raw, dict) and "snapshots" in raw:
-        snapshots_source = raw.get("snapshots", {})
-        metadata = raw.get("metadata", {}) or {}
+    if not isinstance(raw, dict) or "snapshots" not in raw or "metadata" not in raw:
+        raise ValueError(
+            "Le fichier portefeuille n'a pas le format attendu. Re-générez les portefeuilles"
+            " avec la version actuelle du code puis relancez l'analyse."
+        )
+
+    metadata: dict = raw.get("metadata", {}) or {}
+    snapshots_source = raw.get("snapshots", {})
 
     portfolios: Dict[pd.Timestamp, PortfolioSnapshot] = {}
     for key, payload in snapshots_source.items():
+        if not isinstance(payload, dict) or "weights" not in payload or "columns" not in payload:
+            raise ValueError(
+                "Chaque instantané doit contenir les clés 'weights' et 'columns'."
+                " Re-générez les portefeuilles avec la version actuelle du code."
+            )
+
         timestamp = pd.Timestamp(key)
+        weights = np.asarray(payload["weights"], dtype=float)
+        columns = [str(col) for col in payload["columns"]]
 
-        columns: list[str] | None = None
-        if isinstance(payload, dict) and "weights" in payload:
-            weights = np.asarray(payload["weights"], dtype=float)
-            raw_columns = payload.get("columns")
-            if raw_columns is not None:
-                columns = [str(col) for col in raw_columns]
-        else:
-            weights = np.asarray(payload, dtype=float)
-
-        if columns is not None and len(columns) != weights.shape[0]:
+        if len(columns) != weights.shape[0]:
             raise ValueError(
                 "Le fichier de portefeuille contient un couple (poids, colonnes) de longueurs différentes."
             )
@@ -232,65 +234,32 @@ def _compute_out_of_sample(
 
         snapshot = portfolios[rebalance_date]
 
-        candidate_flags = [preferred_filter]
-        opposite_flag = not preferred_filter
-        if opposite_flag not in candidate_flags:
-            candidate_flags.append(opposite_flag)
+        chosen_universe = get_universe(preferred_filter)
+        training_start = max(
+            start - training_delta, chosen_universe.get_data_start_date()
+        )
+        chosen_universe.new_universe(training_start, start, training=True)
+        training_columns = chosen_universe.get_stock_namme_in_order()
 
-        chosen_universe: Universe | None = None
-        source_columns: list[str] | None = None
-        chosen_flag: bool | None = None
-        mismatch_error: ValueError | None = None
-
-        for flag in candidate_flags:
-            candidate_universe = get_universe(flag)
-            training_start = max(
-                start - training_delta, candidate_universe.get_data_start_date()
-            )
-            candidate_universe.new_universe(training_start, start, training=True)
-            training_columns = candidate_universe.get_stock_namme_in_order()
-
-            if snapshot.columns is None:
-                columns = training_columns
-                if len(columns) != len(snapshot.weights):
-                    mismatch_error = ValueError(
-                        "Impossible de relier les poids sauvegardés à l'ordre des titres. "
-                        "Re-générez le portefeuille ou fournissez les métadonnées de colonnes."
-                    )
-                    continue
-            else:
-                columns = snapshot.columns
-                missing = [col for col in columns if col not in training_columns]
-                if missing:
-                    # Cette configuration ne peut pas être utilisée : on tente l'autre
-                    mismatch_error = ValueError(
-                        "Les colonnes stockées dans le portefeuille ne sont pas présentes dans les données "
-                        "pour cette fenêtre. Relancez l'analyse avec --keep-inactive si nécessaire ou "
-                        "recalculez le portefeuille."
-                    )
-                    continue
-
-            chosen_universe = candidate_universe
-            source_columns = columns
-            chosen_flag = flag
-            break
-
-        if chosen_universe is None or source_columns is None or chosen_flag is None:
-            if mismatch_error is not None:
-                raise mismatch_error
+        if snapshot.columns is None:
             raise ValueError(
-                "Impossible d'aligner les poids sauvegardés avec les séries de rendements. "
-                "Essayez de relancer l'analyse avec --keep-inactive si l'optimisation initiale conservait "
-                "les titres inactifs."
+                "Ce portefeuille ne contient pas les métadonnées de colonnes attendues. "
+                "Re-générez les portefeuilles avec la version actuelle du code."
             )
 
-        preferred_filter = chosen_flag
+        columns = snapshot.columns
+        missing = [col for col in columns if col not in training_columns]
+        if missing:
+            raise ValueError(
+                "Les colonnes stockées dans le portefeuille ne sont pas présentes dans les données "
+                "pour cette fenêtre. Recalculez le portefeuille avec les données courantes."
+            )
 
         chosen_universe.new_universe(start, end, training=False)
         stock_returns = chosen_universe.get_stocks_returns()
         index_slice = chosen_universe.get_index_returns()
 
-        weights_series = pd.Series(snapshot.weights, index=source_columns, dtype=float)
+        weights_series = pd.Series(snapshot.weights, index=columns, dtype=float)
         aligned = weights_series.reindex(stock_returns.columns).fillna(0.0)
         weights = aligned.values
 

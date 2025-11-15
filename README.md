@@ -349,9 +349,9 @@ The analyser mirrors the optimisation workflow by replaying the three-year
 training windows (`--training-years`) before evaluating each rebalance. Portfolio
 files produced with the current code store their own metadata (filtering mode,
 training window, rebalancing frequency, etc.) and the helper automatically
-applies those settings, warning you when the CLI arguments differ. If you feed
-it a legacy file that predates this metadata, the script falls back to the
-supplied CLI flags; regenerate the portfolio if the alignment still fails. When
+applies those settings, warning you when the CLI arguments differ. If you still
+have portfolios generated before this metadata was introduced, regenerate them
+before launching the analyser so the weights can be aligned unambiguously. When
 the optimisation deliberately kept inactive securities, pass `--keep-inactive`
 so the backtest uses the same configuration.
 * `analyses/cumulative_returns.png`, `absolute_differences.png` and
