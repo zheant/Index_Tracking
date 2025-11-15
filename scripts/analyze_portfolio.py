@@ -202,20 +202,31 @@ def _compute_out_of_sample(
             )
             candidate_universe.new_universe(training_start, start, training=True)
             training_columns = candidate_universe.get_stock_namme_in_order()
-            columns = snapshot.columns or training_columns
 
-            if snapshot.columns is not None and len(columns) != len(snapshot.weights):
-                mismatch_error = ValueError(
-                    "Les métadonnées du portefeuille (colonnes) ne correspondent pas aux poids enregistrés. "
-                    "Re-générez le portefeuille pour corriger ce fichier."
-                )
-                continue
+            if snapshot.columns is None:
+                columns = training_columns
+                if len(columns) != len(snapshot.weights):
+                    mismatch_error = ValueError(
+                        "Impossible de relier les poids sauvegardés à l'ordre des titres. "
+                        "Re-générez le portefeuille ou fournissez les métadonnées de colonnes."
+                    )
+                    continue
+            else:
+                columns = snapshot.columns
+                missing = [col for col in columns if col not in training_columns]
+                if missing:
+                    # Cette configuration ne peut pas être utilisée : on tente l'autre
+                    mismatch_error = ValueError(
+                        "Les colonnes stockées dans le portefeuille ne sont pas présentes dans les données "
+                        "pour cette fenêtre. Relancez l'analyse avec --keep-inactive si nécessaire ou "
+                        "recalculez le portefeuille."
+                    )
+                    continue
 
-            if len(columns) == len(snapshot.weights):
-                chosen_universe = candidate_universe
-                source_columns = columns
-                chosen_flag = flag
-                break
+            chosen_universe = candidate_universe
+            source_columns = columns
+            chosen_flag = flag
+            break
 
         if chosen_universe is None or source_columns is None or chosen_flag is None:
             if mismatch_error is not None:
