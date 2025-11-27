@@ -1,2 +1,3 @@
 Anaconda3-*.sh
 gurobi*.tar.gz
+.venv/
