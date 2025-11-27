@@ -140,17 +140,16 @@ class Universe():
         valeurs_remplies = nan_avant - nan_apres_remplissage
         print(f"Filled {valeurs_remplies} missing values with limited ffill/bfill.")
 
-        # Nombre de colonnes avant suppression
+        # Restreindre l'univers aux titres ayant des données sur toute la fenêtre
         colonnes_avant = self.df_return.shape[1]
-
-        # Supprimer les colonnes avec trop de NaN résiduels
-        self.df_return = self.df_return.loc[:, self.df_return.isna().sum() <= 10]
+        self.df_return = self.df_return.dropna(axis=1, how="any")
         self.stock_list = self.df_return.columns.to_list()
-
         colonnes_apres = self.df_return.shape[1]
-        print(f"Removed {colonnes_avant - colonnes_apres} columns due to too many missing values.")
+        print(
+            f"Removed {colonnes_avant - colonnes_apres} columns lacking full window coverage."
+        )
 
-        # Supprimer les lignes avec au moins un NaN restant
+        # Supprimer les lignes avec au moins un NaN restant (synchronisation avec l'index)
         lignes_avant = self.df_return.shape[0]
 
         self.df_index.dropna(inplace=True)
