@@ -97,39 +97,20 @@ class Universe():
         # On trie self.stock_list selon l'ordre des colonnes de df_return_all
         ordered_stocks = [stock for stock in self.df_return_all.columns if stock in self.stock_list]
         #retourne les stocks de l'univers au bonne periode de temps
-        self.df_return = self.df_return_all.loc[start_datetime:end_datetime, ordered_stocks].copy().fillna(0)
-        self.df_index = self.df_index_all.loc[start_datetime:end_datetime].copy().fillna(0)
-        #self.data_cleaning()
+        self.df_return = self.df_return_all.loc[start_datetime:end_datetime, ordered_stocks].copy()
+        self.df_index = self.df_index_all.loc[start_datetime:end_datetime].copy()
+
+        # Aligne explicitement les calendriers pour éviter les NaN liés aux jours non communs
+        common_index = self.df_return.index.intersection(self.df_index.index)
+        self.df_return = self.df_return.loc[common_index]
+        self.df_index = self.df_index.loc[common_index]
+
+        self.data_cleaning()
         self.stock_list = list(self.df_return.columns)
 
     
 
     
-    """
-    def data_cleaning(self):
-        # Nombre de colonnes avant remplacement
-        colonnes_avant = self.df_return.shape[1]
-
-        # Remplacer les NaN par des zéros
-        nan_avant = self.df_return.isna().sum().sum()
-        self.df_return.fillna(0, inplace=True)
-        nan_apres = self.df_return.isna().sum().sum()
-        print(f"Replaced {nan_avant} NaN values in df_return with 0.")
-
-        # S'assurer que l'index de df_index n'a pas de NaN
-        nan_index_avant = self.df_index.isna().sum().sum()
-        self.df_index.fillna(0, inplace=True)
-        print(f"Replaced {nan_index_avant} NaN values in df_index with 0.")
-
-        # Synchroniser les index
-        common_index = self.df_return.index.intersection(self.df_index.index)
-        self.df_return = self.df_return.loc[common_index]
-        self.df_index = self.df_index.loc[common_index]
-
-        print(f"Data cleaned and aligned on {len(common_index)} common dates.")
-    """
-
-
     def get_stocks_returns(self):
         return self.df_return
     
@@ -147,31 +128,38 @@ class Universe():
         return len(self.stock_list)
     
     
-    """
     def data_cleaning(self):
+        # Nombre de NaN avant tout traitement
+        nan_avant = self.df_return.isna().sum().sum()
+
+        # Remplissage avant/arrière avec fenêtre limitée pour combler les petits trous
+        self.df_return.ffill(limit=5, inplace=True)
+        self.df_return.bfill(limit=5, inplace=True)
+
+        nan_apres_remplissage = self.df_return.isna().sum().sum()
+        valeurs_remplies = nan_avant - nan_apres_remplissage
+        print(f"Filled {valeurs_remplies} missing values with limited ffill/bfill.")
+
         # Nombre de colonnes avant suppression
         colonnes_avant = self.df_return.shape[1]
 
-        # Supprimer les colonnes avec plus de 10 NaN
+        # Supprimer les colonnes avec trop de NaN résiduels
         self.df_return = self.df_return.loc[:, self.df_return.isna().sum() <= 10]
         self.stock_list = self.df_return.columns.to_list()
 
-        # Nombre de colonnes après suppression
         colonnes_apres = self.df_return.shape[1]
         print(f"Removed {colonnes_avant - colonnes_apres} columns due to too many missing values.")
-        
-        # Supprimer les lignes avec au moins un NaN
-        lignes_avant = self.df_return.shape[0]
-        self.df_return.dropna(inplace=True)
-        lignes_apres = self.df_return.shape[0]
-        print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
-        
-        self.df_index.dropna(inplace=True)
 
+        # Supprimer les lignes avec au moins un NaN restant
+        lignes_avant = self.df_return.shape[0]
+
+        self.df_index.dropna(inplace=True)
         common_index = self.df_return.index.intersection(self.df_index.index)
-        
         self.df_return = self.df_return.loc[common_index]
         self.df_index = self.df_index.loc[common_index]
+
+        self.df_return.dropna(inplace=True)
+        self.df_index = self.df_index.loc[self.df_return.index]
+
         lignes_apres = self.df_return.shape[0]
         print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
-    """
