@@ -51,10 +51,17 @@ def _load_portfolios(path: Path) -> PortfolioDict:
 
 def _align_weights(weights, columns: Iterable[str]) -> pd.Series:
     series = pd.Series(weights)
+    target_cols = list(columns)
     if series.index.dtype == "int64":
         # If weights came from a numpy array, align to provided columns order
-        series.index = list(columns)
-    return series.reindex(columns, fill_value=0)
+        if len(series) != len(target_cols):
+            print(
+                f"⚠️ Weight length mismatch (weights: {len(series)}, columns: {len(target_cols)}); "
+                "truncating/padding to match cleaned universe."
+            )
+        series = pd.Series(series.values[: len(target_cols)], index=target_cols[: len(series)])
+        series = series.reindex(target_cols, fill_value=0)
+    return series.reindex(target_cols, fill_value=0)
 
 
 def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[ReturnSeries, ReturnSeries, Dict[pd.Timestamp, float], Dict[pd.Timestamp, float]]:
