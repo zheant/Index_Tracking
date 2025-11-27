@@ -72,6 +72,12 @@ class Solution:
         self.solution_name = self.universe.args.solution_name
         self.num_assets = self.universe.get_number_of_stocks()
         self.K = self.universe.args.cardinality
+        self.distance_method = getattr(self.universe.args, "distance_method", "dcor")
+        self.simple_corr = self.distance_method == "pearson"
+
+        # Preserve explicit *_cor solution names while allowing CLI flag override.
+        if self.solution_name.endswith("_cor"):
+            self.simple_corr = True
         
         #self.new_return = np.array(self.universe.get_stocks_returns())
         #self.new_index = np.array(self.universe.get_index_returns())
@@ -234,19 +240,45 @@ class Solution:
     
 
     def quob(self):
-        obj = QUOB(self.new_return, self.new_index, self.universe.args.cardinality)
+        obj = QUOB(
+            self.new_return,
+            self.new_index,
+            self.universe.args.cardinality,
+            simple_corr=self.simple_corr,
+            replicator_cores=self.universe.args.replicator_cores,
+            time_limit=self.universe.args.time_limit,
+        )
         return obj.get_weights()
-    
+
     def quob_cor(self):
-        obj = QUOB(self.new_return, self.new_index, self.universe.args.cardinality, simple_corr=True)
+        obj = QUOB(
+            self.new_return,
+            self.new_index,
+            self.universe.args.cardinality,
+            simple_corr=True,
+            replicator_cores=self.universe.args.replicator_cores,
+            time_limit=self.universe.args.time_limit,
+        )
         return obj.get_weights()
 
     def gurobi(self):
-        obj = Gurobi(self.new_return, self.new_index, self.universe.args.cardinality, simple_corr=False)
+        obj = Gurobi(
+            self.new_return,
+            self.new_index,
+            self.universe.args.cardinality,
+            simple_corr=self.simple_corr,
+            time_limit=self.universe.args.time_limit,
+        )
         return obj.get_weights()
-    
+
     def gurobi_cor(self):
-        obj = Gurobi(self.new_return, self.new_index, self.universe.args.cardinality, simple_corr=True)
+        obj = Gurobi(
+            self.new_return,
+            self.new_index,
+            self.universe.args.cardinality,
+            simple_corr=True,
+            time_limit=self.universe.args.time_limit,
+        )
         return obj.get_weights()
 
     def lagrange_partial_forward(

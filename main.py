@@ -18,7 +18,16 @@ def Main():
     parser.add_argument('--solution_name', type=str,
                     default='quob')#,] choices=['quob_cor', 'quob',  'gurobi', 'lagrange_backward'])
 
-    parser.add_argument('--cardinality', type=int, default=30)
+    parser.add_argument('--cardinality', type=int, default=50)
+
+    parser.add_argument('--replicator_cores', type=int, default=int(os.environ.get("REPLICATOR_CORES", 8)),
+                    help='Number of OpenMP threads for ReplicaTOR (overrides REPLICATOR_CORES env)')
+
+    parser.add_argument('--time_limit', type=float, default=300.0,
+                    help='Time limit (seconds) applied to QUOB/ReplicaTOR and Gurobi solves')
+
+    parser.add_argument('--distance_method', type=str, choices=['dcor', 'pearson'], default='dcor',
+                    help='Distance metric for solver matrices (dcor or pearson)')
 
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")

@@ -17,30 +17,35 @@ params = {
 
 
 class Gurobi:
-    def __init__(self, stocks_returns, index_returns, K, simple_corr=False):
+    def __init__(self, stocks_returns, index_returns, K, simple_corr=False, time_limit=300):
         #matrice et vecteur numpy
         self.stocks_returns = stocks_returns
         self.index_returns = index_returns
         self.K = K #cardinalité!!
-        self.idx = None #liste d'indice des stonks choisit 
+        self.idx = None #liste d'indice des stonks choisit
         self.simple_corr = simple_corr
+        self.time_limit = time_limit
         
         
 
 
     def matrix_dcor(self):
-        
+
         Welsch_function = lambda x : 1 - np.exp(-0.5 * x)
 
         n = self.stocks_returns.shape[1]
         dcor_mat = np.zeros((n, n))
-        
+
         for i in range(n):
             for j in range(i, n):
                 dcor_val = dcor.distance_correlation(self.stocks_returns[:, i], self.stocks_returns[:, j])
                 dist = 1 - dcor_val
                 dcor_mat[i, j] = dcor_mat[j, i] = Welsch_function(dist) #Welsch_function(dist)
-    
+
+        dcor_mat = np.nan_to_num(dcor_mat, nan=1.0, posinf=1.0, neginf=1.0)
+        np.fill_diagonal(dcor_mat, 0.0)
+        dcor_mat = np.clip(dcor_mat, 0.0, 1.0)
+
         return dcor_mat
         
 
@@ -50,10 +55,22 @@ class Gurobi:
         distance_func = lambda di : np.sqrt(0.5*(1 - di))
 
         n = self.stocks_returns.shape[1]
-        corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
-        
-        distance_matrix = distance_func(corr_matrix)
-        return Welsch_function(distance_matrix)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
+
+        corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
+
+        base_distance = 0.5 * (1 - corr_matrix)
+        base_distance = np.maximum(base_distance, 0.0)
+        distance_matrix = distance_func(base_distance)
+        distance_matrix = np.nan_to_num(distance_matrix, nan=1.0, posinf=1.0, neginf=1.0)
+
+        welsch_distance = np.nan_to_num(Welsch_function(distance_matrix), nan=1.0, posinf=1.0, neginf=1.0)
+        np.fill_diagonal(welsch_distance, 0.0)
+        welsch_distance = np.clip(welsch_distance, 0.0, 1.0)
+
+        return welsch_distance
 
 
     def stock_picking(self, n):
@@ -75,7 +92,7 @@ class Gurobi:
         #m = gp.Model("BQO_compact")
         #m.Params.NonConvex = 2
         with gp.Env(params=params) as env, gp.Model(env=env) as m:
-            m.setParam("TimeLimit", 300)
+            m.setParam("TimeLimit", self.time_limit)
 
             z = m.addMVar(n, vtype=GRB.BINARY, name="z")
 

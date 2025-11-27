@@ -1,0 +1,15 @@
+# Core dependencies for the index tracking workflows
+pandas
+numpy
+scipy
+python-dateutil
+matplotlib
+seaborn
+
+# Distance correlation and optimiser utilities
+dcor
+
+# WRDS data downloads
+wrds
+psycopg2-binary
+SQLAlchemy

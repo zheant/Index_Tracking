@@ -134,8 +134,11 @@ class Universe():
         return self.df_return
     
     def get_index_returns(self):
-        #retourne une série!
-        return self.df_index.squeeze()
+        # Toujours renvoyer une série (y compris pour une seule date) pour éviter
+        # d'écraser la dimension temps lors de l'extraction du sous-ensemble.
+        if isinstance(self.df_index, pd.DataFrame):
+            return self.df_index.iloc[:, 0]
+        return self.df_index
     
     def get_stock_namme_in_order(self):
         return self.df_return.columns
