@@ -269,14 +269,7 @@ class Solution:
             simple_corr=self.simple_corr,
             time_limit=self.universe.args.time_limit,
         )
-        if hasattr(obj, "get_weights"):
-            return obj.get_weights()
-
-        weights = obj.calc_weights()
-        full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx or [], weights):
-            full[idx] = weight
-        return full
+        return obj.get_weights()
 
     def gurobi_cor(self):
         obj = Gurobi(
@@ -286,14 +279,7 @@ class Solution:
             simple_corr=True,
             time_limit=self.universe.args.time_limit,
         )
-        if hasattr(obj, "get_weights"):
-            return obj.get_weights()
-
-        weights = obj.calc_weights()
-        full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx or [], weights):
-            full[idx] = weight
-        return full
+        return obj.get_weights()
 
     def lagrange_partial_forward(
         self
