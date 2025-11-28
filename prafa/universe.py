@@ -80,10 +80,8 @@ class Universe():
             end_datetime = pd.Timestamp(end_datetime)
         
         #ajustement des stocks dans l'univers
-        if training:
-            self.update_stock_list(end_datetime)
-        else:
-            self.update_stock_list(start_datetime)
+        # Utilise toujours la liste de début de fenêtre pour éviter le look-ahead sur la composition
+        self.update_stock_list(start_datetime)
         
         # ⚠️ À mettre dans la méthode new_universe juste avant d'extraire les rendements :
         valid_stocks = [stock for stock in self.stock_list if stock in self.df_return_all.columns]
@@ -102,10 +100,16 @@ class Universe():
 
         # Aligne explicitement les calendriers pour éviter les NaN liés aux jours non communs
         common_index = self.df_return.index.intersection(self.df_index.index)
+        dropped_calendar = (
+            set(self.df_return.index) | set(self.df_index.index)
+        ) - set(common_index)
         self.df_return = self.df_return.loc[common_index]
         self.df_index = self.df_index.loc[common_index]
 
-        self.data_cleaning()
+        self.data_cleaning(
+            target_cardinality=getattr(self.args, "cardinality", None),
+            dropped_calendar_dates=sorted(dropped_calendar),
+        )
         self.stock_list = list(self.df_return.columns)
 
     
@@ -128,7 +132,12 @@ class Universe():
         return len(self.stock_list)
     
     
-    def data_cleaning(self):
+    def data_cleaning(self, target_cardinality=None, dropped_calendar_dates=None):
+        stats = {
+            "initial_shape": self.df_return.shape,
+            "calendar_dates_removed": dropped_calendar_dates or [],
+        }
+
         # Nombre de NaN avant tout traitement
         nan_avant = self.df_return.isna().sum().sum()
 
@@ -138,27 +147,39 @@ class Universe():
 
         nan_apres_remplissage = self.df_return.isna().sum().sum()
         valeurs_remplies = nan_avant - nan_apres_remplissage
+        stats["values_filled"] = int(valeurs_remplies)
         print(f"Filled {valeurs_remplies} missing values with limited ffill/bfill.")
 
         # Restreindre l'univers aux titres ayant des données sur toute la fenêtre
-        colonnes_avant = self.df_return.shape[1]
-        self.df_return = self.df_return.dropna(axis=1, how="any")
+        missing_by_column = self.df_return.isna().any(axis=0)
+        colonnes_supprimees = missing_by_column[missing_by_column].index.tolist()
+        self.df_return = self.df_return.loc[:, ~missing_by_column]
         self.stock_list = self.df_return.columns.to_list()
-        colonnes_apres = self.df_return.shape[1]
+        stats["dropped_columns"] = colonnes_supprimees
         print(
-            f"Removed {colonnes_avant - colonnes_apres} columns lacking full window coverage."
+            f"Removed {len(colonnes_supprimees)} columns lacking full window coverage."
         )
+
+        if target_cardinality is not None and self.df_return.shape[1] < target_cardinality:
+            raise ValueError(
+                "Cleaned universe cardinality below target after dropping incomplete columns: "
+                f"{self.df_return.shape[1]} < {target_cardinality}. Consider reducing the cardinality "
+                "or relaxing the missing-data policy."
+            )
 
         # Supprimer les lignes avec au moins un NaN restant (synchronisation avec l'index)
         lignes_avant = self.df_return.shape[0]
+        valid_rows = self.df_return.notna().all(axis=1)
+        index_valid = self.df_index.notna().all(axis=1)
+        row_mask = valid_rows & index_valid
 
-        self.df_index.dropna(inplace=True)
-        common_index = self.df_return.index.intersection(self.df_index.index)
-        self.df_return = self.df_return.loc[common_index]
-        self.df_index = self.df_index.loc[common_index]
+        lignes_supprimees = self.df_return.index[~row_mask].tolist()
+        self.df_return = self.df_return.loc[row_mask]
+        self.df_index = self.df_index.loc[row_mask]
 
-        self.df_return.dropna(inplace=True)
-        self.df_index = self.df_index.loc[self.df_return.index]
-
+        stats["dropped_rows"] = lignes_supprimees
         lignes_apres = self.df_return.shape[0]
+        stats["final_shape"] = self.df_return.shape
+        self.last_cleaning_stats = stats
+
         print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
