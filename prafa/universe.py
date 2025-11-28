@@ -88,8 +88,12 @@ class Universe():
             end_datetime = pd.Timestamp(end_datetime)
         
         #ajustement des stocks dans l'univers
-        # Utilise toujours la liste de début de fenêtre pour éviter le look-ahead sur la composition
-        self.update_stock_list(start_datetime)
+        # Pour l'entraînement, on regarde la composition à la fin de la fenêtre (look-ahead voulu)
+        # et pour le backtest on reste aligné sur la date de début.
+        if training:
+            self.update_stock_list(end_datetime)
+        else:
+            self.update_stock_list(start_datetime)
         
         # ⚠️ À mettre dans la méthode new_universe juste avant d'extraire les rendements :
         valid_stocks = [stock for stock in self.stock_list if stock in self.df_return_all.columns]
