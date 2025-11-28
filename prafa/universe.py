@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 
 
@@ -14,6 +15,8 @@ class Universe():
         args,
     ) :
         self.args = args
+
+        self.constituent_dir, self.constituent_years = self._discover_constituent_files()
         
         #données sur toutes l'historique
         self.initialisation_donnes()
@@ -38,22 +41,27 @@ class Universe():
 
     
     def update_stock_list(self, datetime : datetime = None):
-        #ce code va aller chercher la compositon
-        #df = lambda year : pd.read_csv(f"financial_data/{self.args.index}/constituants/{year}.csv",usecols=["Ticker"]).str.split().str[0].str.replace("/", ".")
-        df = lambda year: pd.read_csv(
-                f"financial_data/{self.args.index}/constituants/{year}.csv", dtype={'permno': str})["permno"]
-        
+        def load_constituents(year: int) -> list[str]:
+            selected_year = self._select_constituent_year(year)
+            filepath = self.constituent_dir / f"{selected_year}.csv"
+            df = pd.read_csv(filepath, dtype={"permno": str})["permno"]
+            if selected_year != year:
+                print(
+                    f"⚠️ Constituents for {year} unavailable; using {selected_year} from '{self.constituent_dir}'."
+                )
+            return df.tolist()
+
         if datetime is None:
             #appelle dans le constructeur premier universe
             self.year = int(self.args.start_date[0:4])
-            self.stock_list = df(self.year).tolist()
+            self.stock_list = load_constituents(self.year)
 
         elif datetime.year != self.year:
             #puisque le rebalancement se fait par an,
             #on va chercher la liste des stocks pour l'année en cours
             #sinon on va chercher les stocks pour la nouvelle année
             self.year = datetime.year
-            self.stock_list = df(self.year).tolist()
+            self.stock_list = load_constituents(self.year)
 
         return self.stock_list
     
@@ -183,3 +191,44 @@ class Universe():
         self.last_cleaning_stats = stats
 
         print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
+
+
+    def _discover_constituent_files(self) -> tuple[Path, list[int]]:
+        candidate_dirs = [
+            Path(f"financial_data/{self.args.index}/constituants"),
+            Path(f"financial_data/{self.args.index}/constituants_raw"),
+        ]
+        for directory in candidate_dirs:
+            if not directory.exists():
+                continue
+
+            years = sorted(
+                int(path.stem)
+                for path in directory.glob("*.csv")
+                if path.stem.isdigit()
+            )
+            if years:
+                return directory, years
+
+        raise FileNotFoundError(
+            "No constituent CSV files found under 'constituants' or 'constituants_raw'."
+        )
+
+
+    def _select_constituent_year(self, requested_year: int) -> int:
+        if requested_year in self.constituent_years:
+            return requested_year
+
+        earliest = self.constituent_years[0]
+        latest = self.constituent_years[-1]
+
+        if requested_year < earliest:
+            return earliest
+
+        # Choose the most recent available year that does not exceed the request to avoid look-ahead
+        prior_years = [y for y in self.constituent_years if y <= requested_year]
+        if prior_years:
+            return prior_years[-1]
+
+        # If only future years exist (should not happen with above check), fall back to the earliest
+        return latest
