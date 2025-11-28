@@ -2,3 +2,4 @@ Anaconda3-*.sh
 gurobi*.tar.gz
 .venv/
 prafa/gurobi.py
+prafa/gurobi.py
