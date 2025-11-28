@@ -49,7 +49,7 @@ def _load_portfolios(path: Path) -> PortfolioDict:
     return portfolios
 
 
-def _align_weights(weights, columns: Iterable[str]) -> pd.Series:
+def _align_weights(weights, columns: Iterable[str], target_cardinality: int | None = None) -> pd.Series:
     series = pd.Series(weights)
     target_cols = list(columns)
     if series.index.dtype == "int64":
@@ -60,8 +60,20 @@ def _align_weights(weights, columns: Iterable[str]) -> pd.Series:
                 "truncating/padding to match cleaned universe."
             )
         series = pd.Series(series.values[: len(target_cols)], index=target_cols[: len(series)])
-        series = series.reindex(target_cols, fill_value=0)
-    return series.reindex(target_cols, fill_value=0)
+    series = series.reindex(target_cols, fill_value=0)
+
+    non_zero = (series != 0).sum()
+    if target_cardinality is not None and non_zero < target_cardinality:
+        print(
+            f"⚠️ Effective invested names after alignment ({non_zero}) below target cardinality ({target_cardinality})."
+        )
+
+    total_weight = series.sum()
+    if total_weight > 0:
+        series = series / total_weight
+    else:
+        print("⚠️ Aligned weights sum to zero; portfolio will have no exposure.")
+    return series
 
 
 def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[ReturnSeries, ReturnSeries, Dict[pd.Timestamp, float], Dict[pd.Timestamp, float]]:
@@ -91,7 +103,12 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
         X_test = universe.get_stocks_returns()
         Y_test = universe.get_index_returns()
         weights = portfolios[start_date]
-        weights_series = _align_weights(weights, X_test.columns)
+        weights_series = _align_weights(weights, X_test.columns, target_cardinality=args.cardinality)
+
+        if X_test.shape[1] < args.cardinality:
+            print(
+                f"⚠️ Cleaned universe size ({X_test.shape[1]}) below target cardinality ({args.cardinality}) for window starting {start_date.date()}."
+            )
 
         assert all(X_test.index == Y_test.index), "Les index de X_test et Y_test ne sont pas alignés !"
 
