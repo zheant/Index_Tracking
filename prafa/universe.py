@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 
 
@@ -14,6 +15,8 @@ class Universe():
         args,
     ) :
         self.args = args
+
+        self.constituent_dir, self.constituent_years = self._discover_constituent_files()
         
         #données sur toutes l'historique
         self.initialisation_donnes()
@@ -38,22 +41,27 @@ class Universe():
 
     
     def update_stock_list(self, datetime : datetime = None):
-        #ce code va aller chercher la compositon
-        #df = lambda year : pd.read_csv(f"financial_data/{self.args.index}/constituants/{year}.csv",usecols=["Ticker"]).str.split().str[0].str.replace("/", ".")
-        df = lambda year: pd.read_csv(
-                f"financial_data/{self.args.index}/constituants/{year}.csv", dtype={'permno': str})["permno"]
-        
+        def load_constituents(year: int) -> list[str]:
+            selected_year = self._select_constituent_year(year)
+            filepath = self.constituent_dir / f"{selected_year}.csv"
+            df = pd.read_csv(filepath, dtype={"permno": str})["permno"]
+            if selected_year != year:
+                print(
+                    f"⚠️ Constituents for {year} unavailable; using {selected_year} from '{self.constituent_dir}'."
+                )
+            return df.tolist()
+
         if datetime is None:
             #appelle dans le constructeur premier universe
             self.year = int(self.args.start_date[0:4])
-            self.stock_list = df(self.year).tolist()
+            self.stock_list = load_constituents(self.year)
 
         elif datetime.year != self.year:
             #puisque le rebalancement se fait par an,
             #on va chercher la liste des stocks pour l'année en cours
             #sinon on va chercher les stocks pour la nouvelle année
             self.year = datetime.year
-            self.stock_list = df(self.year).tolist()
+            self.stock_list = load_constituents(self.year)
 
         return self.stock_list
     
@@ -80,6 +88,8 @@ class Universe():
             end_datetime = pd.Timestamp(end_datetime)
         
         #ajustement des stocks dans l'univers
+        # Pour l'entraînement, on regarde la composition à la fin de la fenêtre (look-ahead voulu)
+        # et pour le backtest on reste aligné sur la date de début.
         if training:
             self.update_stock_list(end_datetime)
         else:
@@ -102,10 +112,16 @@ class Universe():
 
         # Aligne explicitement les calendriers pour éviter les NaN liés aux jours non communs
         common_index = self.df_return.index.intersection(self.df_index.index)
+        dropped_calendar = (
+            set(self.df_return.index) | set(self.df_index.index)
+        ) - set(common_index)
         self.df_return = self.df_return.loc[common_index]
         self.df_index = self.df_index.loc[common_index]
 
-        self.data_cleaning()
+        self.data_cleaning(
+            target_cardinality=getattr(self.args, "cardinality", None),
+            dropped_calendar_dates=sorted(dropped_calendar),
+        )
         self.stock_list = list(self.df_return.columns)
 
     
@@ -128,7 +144,12 @@ class Universe():
         return len(self.stock_list)
     
     
-    def data_cleaning(self):
+    def data_cleaning(self, target_cardinality=None, dropped_calendar_dates=None):
+        stats = {
+            "initial_shape": self.df_return.shape,
+            "calendar_dates_removed": dropped_calendar_dates or [],
+        }
+
         # Nombre de NaN avant tout traitement
         nan_avant = self.df_return.isna().sum().sum()
 
@@ -138,27 +159,80 @@ class Universe():
 
         nan_apres_remplissage = self.df_return.isna().sum().sum()
         valeurs_remplies = nan_avant - nan_apres_remplissage
+        stats["values_filled"] = int(valeurs_remplies)
         print(f"Filled {valeurs_remplies} missing values with limited ffill/bfill.")
 
         # Restreindre l'univers aux titres ayant des données sur toute la fenêtre
-        colonnes_avant = self.df_return.shape[1]
-        self.df_return = self.df_return.dropna(axis=1, how="any")
+        missing_by_column = self.df_return.isna().any(axis=0)
+        colonnes_supprimees = missing_by_column[missing_by_column].index.tolist()
+        self.df_return = self.df_return.loc[:, ~missing_by_column]
         self.stock_list = self.df_return.columns.to_list()
-        colonnes_apres = self.df_return.shape[1]
+        stats["dropped_columns"] = colonnes_supprimees
         print(
-            f"Removed {colonnes_avant - colonnes_apres} columns lacking full window coverage."
+            f"Removed {len(colonnes_supprimees)} columns lacking full window coverage."
         )
+
+        if target_cardinality is not None and self.df_return.shape[1] < target_cardinality:
+            raise ValueError(
+                "Cleaned universe cardinality below target after dropping incomplete columns: "
+                f"{self.df_return.shape[1]} < {target_cardinality}. Consider reducing the cardinality "
+                "or relaxing the missing-data policy."
+            )
 
         # Supprimer les lignes avec au moins un NaN restant (synchronisation avec l'index)
         lignes_avant = self.df_return.shape[0]
+        valid_rows = self.df_return.notna().all(axis=1)
+        index_valid = self.df_index.notna().all(axis=1)
+        row_mask = valid_rows & index_valid
 
-        self.df_index.dropna(inplace=True)
-        common_index = self.df_return.index.intersection(self.df_index.index)
-        self.df_return = self.df_return.loc[common_index]
-        self.df_index = self.df_index.loc[common_index]
+        lignes_supprimees = self.df_return.index[~row_mask].tolist()
+        self.df_return = self.df_return.loc[row_mask]
+        self.df_index = self.df_index.loc[row_mask]
 
-        self.df_return.dropna(inplace=True)
-        self.df_index = self.df_index.loc[self.df_return.index]
-
+        stats["dropped_rows"] = lignes_supprimees
         lignes_apres = self.df_return.shape[0]
+        stats["final_shape"] = self.df_return.shape
+        self.last_cleaning_stats = stats
+
         print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
+
+
+    def _discover_constituent_files(self) -> tuple[Path, list[int]]:
+        candidate_dirs = [
+            Path(f"financial_data/{self.args.index}/constituants"),
+            Path(f"financial_data/{self.args.index}/constituants_raw"),
+        ]
+        for directory in candidate_dirs:
+            if not directory.exists():
+                continue
+
+            years = sorted(
+                int(path.stem)
+                for path in directory.glob("*.csv")
+                if path.stem.isdigit()
+            )
+            if years:
+                return directory, years
+
+        raise FileNotFoundError(
+            "No constituent CSV files found under 'constituants' or 'constituants_raw'."
+        )
+
+
+    def _select_constituent_year(self, requested_year: int) -> int:
+        if requested_year in self.constituent_years:
+            return requested_year
+
+        earliest = self.constituent_years[0]
+        latest = self.constituent_years[-1]
+
+        if requested_year < earliest:
+            return earliest
+
+        # Choose the most recent available year that does not exceed the request to avoid look-ahead
+        prior_years = [y for y in self.constituent_years if y <= requested_year]
+        if prior_years:
+            return prior_years[-1]
+
+        # If only future years exist (should not happen with above check), fall back to the earliest
+        return latest
