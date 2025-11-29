@@ -273,8 +273,12 @@ class Solution:
             return obj.get_weights()
 
         weights = obj.calc_weights()
+        if weights is None or obj.idx is None or len(obj.idx) == 0:
+            print("Warning: Gurobi did not return any weights (likely time limit or infeasible model); using zero portfolio.")
+            return np.zeros(self.new_return.shape[1])
+
         full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx or [], weights):
+        for idx, weight in zip(obj.idx, weights):
             full[idx] = weight
         return full
 
@@ -290,8 +294,12 @@ class Solution:
             return obj.get_weights()
 
         weights = obj.calc_weights()
+        if weights is None or obj.idx is None or len(obj.idx) == 0:
+            print("Warning: Gurobi (correlation) did not return any weights (likely time limit or infeasible model); using zero portfolio.")
+            return np.zeros(self.new_return.shape[1])
+
         full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx or [], weights):
+        for idx, weight in zip(obj.idx, weights):
             full[idx] = weight
         return full
 
