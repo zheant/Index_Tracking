@@ -269,21 +269,19 @@ class Solution:
             simple_corr=self.simple_corr,
             time_limit=self.universe.args.time_limit,
         )
-        if hasattr(obj, "get_weights"):
-            return obj.get_weights()
-
-        weights = obj.calc_weights()
+        weights = obj.get_weights()
         if weights is None or obj.idx is None or len(obj.idx) == 0:
             status = getattr(obj, "status", None)
             runtime = getattr(obj, "runtime", None)
+            selected = getattr(obj, "selection_cardinality", None)
             print(
-                "Warning: Gurobi did not return any weights (status=%s, runtime=%s); "
-                "using zero portfolio." % (status, runtime)
+                "Warning: Gurobi did not return any weights (status=%s, runtime=%s, "
+                "selected=%s); using zero portfolio." % (status, runtime, selected)
             )
             return np.zeros(self.new_return.shape[1])
 
         full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx, weights):
+        for idx, weight in zip(obj.idx, weights[obj.idx] if weights.shape[0] == self.new_return.shape[1] else weights):
             full[idx] = weight
         return full
 
@@ -295,21 +293,19 @@ class Solution:
             simple_corr=True,
             time_limit=self.universe.args.time_limit,
         )
-        if hasattr(obj, "get_weights"):
-            return obj.get_weights()
-
-        weights = obj.calc_weights()
+        weights = obj.get_weights()
         if weights is None or obj.idx is None or len(obj.idx) == 0:
             status = getattr(obj, "status", None)
             runtime = getattr(obj, "runtime", None)
+            selected = getattr(obj, "selection_cardinality", None)
             print(
-                "Warning: Gurobi (correlation) did not return any weights (status=%s, runtime=%s); "
-                "using zero portfolio." % (status, runtime)
+                "Warning: Gurobi (correlation) did not return any weights (status=%s, runtime=%s, "
+                "selected=%s); using zero portfolio." % (status, runtime, selected)
             )
             return np.zeros(self.new_return.shape[1])
 
         full = np.zeros(self.new_return.shape[1])
-        for idx, weight in zip(obj.idx, weights):
+        for idx, weight in zip(obj.idx, weights[obj.idx] if weights.shape[0] == self.new_return.shape[1] else weights):
             full[idx] = weight
         return full
 
