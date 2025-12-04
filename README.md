@@ -64,6 +64,10 @@ executable (e.g., `chmod +x ~/or_tool/ReplicaTOR/cmake-build/ReplicaTOR`).
        --time_limit 300 --distance_method dcor
    ```
 
+If you need to reproduce the legacy behaviour from the original repository
+(keeping incomplete tickers and filling missing returns with zeros), pass
+`--missing_policy legacy` to both `main.py` and `scripts/analyze_results.py`.
+
 The SP500 experiments continue to run as before; pass `--index sp500` and, if
 desired, override the cardinality (default: 50) to the original 50-stock
 portfolio used in the internship report.

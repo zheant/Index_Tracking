@@ -253,6 +253,7 @@ def _build_args(cli_args: argparse.Namespace, solution_name: str) -> argparse.Na
         cardinality=cli_args.cardinality,
         start_date=cli_args.start_date,
         end_date=cli_args.end_date,
+        missing_policy=cli_args.missing_policy,
     )
 
 
@@ -267,6 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start_date", default="2014-01-02", help="Training start date used for the portfolios.")
     parser.add_argument("--end_date", default="2023-12-31", help="Training end date used for the portfolios.")
     parser.add_argument("--output_dir", default=None, help="Directory to write plots (default: <result_path>/analysis_<index>_<cardinality>).")
+    parser.add_argument("--missing_policy", choices=["strict", "legacy"], default="strict", help="Missing-data handling to match portfolio generation (strict drops gaps; legacy fills with zeros like the original code).")
     return parser.parse_args()
 
 

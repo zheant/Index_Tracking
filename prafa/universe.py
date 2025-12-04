@@ -15,6 +15,7 @@ class Universe():
         args,
     ) :
         self.args = args
+        self.missing_policy = getattr(args, "missing_policy", "strict")
 
         self.constituent_dir, self.constituent_years = self._discover_constituent_files()
         
@@ -145,6 +146,23 @@ class Universe():
     
     
     def data_cleaning(self, target_cardinality=None, dropped_calendar_dates=None):
+        if self.missing_policy == "legacy":
+            total_nans = int(self.df_return.isna().sum().sum())
+            self.df_return = self.df_return.fillna(0)
+            self.df_index = self.df_index.fillna(0)
+            self.last_cleaning_stats = {
+                "initial_shape": self.df_return.shape,
+                "calendar_dates_removed": dropped_calendar_dates or [],
+                "values_filled": total_nans,
+                "dropped_columns": [],
+                "dropped_rows": [],
+                "final_shape": self.df_return.shape,
+            }
+            print(
+                "Legacy missing-data policy: filled all NaNs with zero and kept all columns/rows.",
+            )
+            return
+
         stats = {
             "initial_shape": self.df_return.shape,
             "calendar_dates_removed": dropped_calendar_dates or [],

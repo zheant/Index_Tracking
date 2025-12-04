@@ -29,6 +29,9 @@ def Main():
     parser.add_argument('--distance_method', type=str, choices=['dcor', 'pearson'], default='dcor',
                     help='Distance metric for solver matrices (dcor or pearson)')
 
+    parser.add_argument('--missing_policy', type=str, choices=['strict', 'legacy'], default='strict',
+                    help='Missing-data handling: strict drops incomplete assets/rows; legacy fills NaNs with zeros')
+
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")
     parser.add_argument('--end_date', type=str, default="2025-01-02")
