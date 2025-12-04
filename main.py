@@ -1,8 +1,8 @@
 import argparse
+import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
-import os
 from prafa.portfolio import Portfolio
 from prafa.universe import Universe
 
@@ -29,8 +29,8 @@ def Main():
     parser.add_argument('--distance_method', type=str, choices=['dcor', 'pearson'], default='dcor',
                     help='Distance metric for solver matrices (dcor or pearson)')
 
-    parser.add_argument('--missing_policy', type=str, choices=['strict', 'legacy'], default='strict',
-                    help='Missing-data handling: strict drops incomplete assets/rows; legacy fills NaNs with zeros')
+    parser.add_argument('--missing_policy', type=str, choices=['auto', 'strict', 'legacy'], default='auto',
+                    help='Missing-data handling: auto uses legacy for SP500 and strict otherwise; override to force a policy')
 
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")
@@ -43,6 +43,9 @@ def Main():
     parser.add_argument('--T', type=int, default=3, help="nombre d'année pour l'entrainement")
     parser.add_argument('--rebalancing', type=int, default=12, help="Month increment for rebalancing")
     args = parser.parse_args()
+
+    if args.missing_policy == "auto":
+        args.missing_policy = "legacy" if args.index.lower() == "sp500" else "strict"
     
   
 

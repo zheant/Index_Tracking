@@ -65,8 +65,10 @@ executable (e.g., `chmod +x ~/or_tool/ReplicaTOR/cmake-build/ReplicaTOR`).
    ```
 
 If you need to reproduce the legacy behaviour from the original repository
-(keeping incomplete tickers and filling missing returns with zeros), pass
-`--missing_policy legacy` to both `main.py` and `scripts/analyze_results.py`.
+(keeping incomplete tickers and filling missing returns with zeros), use the
+default `--missing_policy auto` (it selects legacy for SP500 and strict for
+other indices) or force `--missing_policy legacy` on both `main.py` and
+`scripts/analyze_results.py`.
 
 The SP500 experiments continue to run as before; pass `--index sp500` and, if
 desired, override the cardinality (default: 50) to the original 50-stock

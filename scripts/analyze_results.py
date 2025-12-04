@@ -268,12 +268,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start_date", default="2014-01-02", help="Training start date used for the portfolios.")
     parser.add_argument("--end_date", default="2023-12-31", help="Training end date used for the portfolios.")
     parser.add_argument("--output_dir", default=None, help="Directory to write plots (default: <result_path>/analysis_<index>_<cardinality>).")
-    parser.add_argument("--missing_policy", choices=["strict", "legacy"], default="strict", help="Missing-data handling to match portfolio generation (strict drops gaps; legacy fills with zeros like the original code).")
+    parser.add_argument(
+        "--missing_policy",
+        choices=["auto", "strict", "legacy"],
+        default="auto",
+        help=(
+            "Missing-data handling to match portfolio generation: auto chooses legacy for SP500 and strict otherwise; "
+            "override to force a specific policy."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     cli_args = parse_args()
+    if cli_args.missing_policy == "auto":
+        cli_args.missing_policy = "legacy" if cli_args.index.lower() == "sp500" else "strict"
+
     output_dir = Path(cli_args.output_dir) if cli_args.output_dir else Path(cli_args.result_path) / f"analysis_{cli_args.index}_{cli_args.cardinality}"
     output_dir.mkdir(parents=True, exist_ok=True)
 

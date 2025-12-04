@@ -111,6 +111,27 @@ class Universe():
         self.df_return = self.df_return_all.loc[start_datetime:end_datetime, ordered_stocks].copy()
         self.df_index = self.df_index_all.loc[start_datetime:end_datetime].copy()
 
+        # Pour la reproduction SP500, conserver le comportement historique :
+        # pas d'intersection de calendriers ni de nettoyage, on remplit les NaN
+        # par des zéros et on conserve toutes les colonnes.
+        if self.missing_policy == "legacy":
+            filled_values = int(self.df_return.isna().sum().sum())
+            self.df_return = self.df_return.fillna(0)
+            self.df_index = self.df_index.fillna(0)
+            self.stock_list = list(self.df_return.columns)
+            self.last_cleaning_stats = {
+                "initial_shape": self.df_return.shape,
+                "calendar_dates_removed": [],
+                "values_filled": filled_values,
+                "dropped_columns": [],
+                "dropped_rows": [],
+                "final_shape": self.df_return.shape,
+            }
+            print(
+                "Legacy missing-data policy: filled all NaNs with zero and kept all columns/rows.",
+            )
+            return
+
         # Aligne explicitement les calendriers pour éviter les NaN liés aux jours non communs
         common_index = self.df_return.index.intersection(self.df_index.index)
         dropped_calendar = (
