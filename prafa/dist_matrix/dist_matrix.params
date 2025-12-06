@@ -1,0 +1,16 @@
+num_vars 503 #INT number of variables/nodes
+                num_k 50 #INT number of medoids/exemplars
+                B_scale_factor 0.0333 0.5*(self.K+1)/n#FLOAT32 scaling factor for model bias, set to 0.5*(num_k +1)/num_vars
+                D_scale_factor 1.0 #FLOAT32 scaling factor for model distances, leave at 1
+                problem_path /home/ubuntu/Index_Tracking/prafa/dist_matrix/
+                problem_name dist_matrix
+                cost_answer -1000000 #FLOAT32 target cost to allow program to exit early if found, set to large neg value if you don't want an early exit
+                T_max 0.01 #FLOAT32 parallel tempering max temperature
+                T_min 0.00001 #FLOAT32 parallel tempering min temperature
+                time_limit 10800.0 #FLOAT64 time limit for search in seconds
+                round_limit 100000000 #INT round/iteration limit for search. Search ends if no cost improvement found within a 10000 round window
+                num_replicas_per_controller 32 #INT (POW2 only) number of replicas per parallel tempering controller
+                num_controllers 1 #INT (POW2 only) number of parallel tempering controllers
+                num_cores_per_controller 8 #INT (POW2 only) number of cores/threads to dedicate to each controller
+                ladder_init_mode 2 #INT (0,1,2) parallel tempering ladder init mode. 0->linear spacing b/w t_min & t_max. 1->linear spacing between beta_max and beta_min, then translated to T. 2->exponential spacing between T_min and T_max
+                
