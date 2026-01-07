@@ -84,7 +84,7 @@ class QUOB:
         corr_df = pd.DataFrame(self.stocks_returns).corr(min_periods=min_obs)
         corr_matrix = corr_df.to_numpy()
         corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
-        corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        corr_matrix = np.nan_to_num(corr_matrix, nan=-1.0, posinf=-1.0, neginf=-1.0)
 
         distance_matrix = distance_func(corr_matrix)
         distance_matrix = np.nan_to_num(distance_matrix, nan=1.0, posinf=1.0, neginf=1.0)
