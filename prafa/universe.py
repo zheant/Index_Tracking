@@ -188,27 +188,31 @@ class Universe():
             "initial_shape": self.df_return.shape,
             "calendar_dates_removed": dropped_calendar_dates or [],
         }
-
+        max_missing_frac = 0.05
+        
         # Nombre de NaN avant tout traitement
         nan_avant = self.df_return.isna().sum().sum()
 
         # Remplissage avant/arrière avec fenêtre limitée pour combler les petits trous
-        self.df_return.ffill(limit=5, inplace=True)
-        self.df_return.bfill(limit=5, inplace=True)
+        self.df_return.ffill(limit=2, inplace=True)
+        self.df_return.bfill(limit=2, inplace=True)
 
         nan_apres_remplissage = self.df_return.isna().sum().sum()
         valeurs_remplies = nan_avant - nan_apres_remplissage
         stats["values_filled"] = int(valeurs_remplies)
         print(f"Filled {valeurs_remplies} missing values with limited ffill/bfill.")
 
-        # Restreindre l'univers aux titres ayant des données sur toute la fenêtre
-        missing_by_column = self.df_return.isna().any(axis=0)
-        colonnes_supprimees = missing_by_column[missing_by_column].index.tolist()
-        self.df_return = self.df_return.loc[:, ~missing_by_column]
+        # Garder les titres dont la fraction de NaN reste raisonnable
+        missing_frac = self.df_return.isna().mean(axis=0)
+        keep_cols = missing_frac <= max_missing_frac
+        colonnes_supprimees = missing_frac[~keep_cols].index.tolist()
+        self.df_return = self.df_return.loc[:, keep_cols]
         self.stock_list = self.df_return.columns.to_list()
         stats["dropped_columns"] = colonnes_supprimees
         print(
-            f"Removed {len(colonnes_supprimees)} columns lacking full window coverage."
+            "Removed "
+            f"{len(colonnes_supprimees)} columns exceeding {max_missing_frac:.0%} "
+            "missing-data threshold."
         )
 
         if target_cardinality is not None and self.df_return.shape[1] < target_cardinality:
@@ -218,15 +222,12 @@ class Universe():
                 "or relaxing the missing-data policy."
             )
 
-        # Supprimer les lignes avec au moins un NaN restant (synchronisation avec l'index)
+        # Supprimer les lignes où l'indice de référence est manquant
         lignes_avant = self.df_return.shape[0]
-        valid_rows = self.df_return.notna().all(axis=1)
         index_valid = self.df_index.notna().all(axis=1)
-        row_mask = valid_rows & index_valid
-
-        lignes_supprimees = self.df_return.index[~row_mask].tolist()
-        self.df_return = self.df_return.loc[row_mask]
-        self.df_index = self.df_index.loc[row_mask]
+        lignes_supprimees = self.df_return.index[~index_valid].tolist()
+        self.df_return = self.df_return.loc[index_valid]
+        self.df_index = self.df_index.loc[index_valid]
 
         stats["dropped_rows"] = lignes_supprimees
         lignes_apres = self.df_return.shape[0]
