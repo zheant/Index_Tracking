@@ -190,7 +190,7 @@ class QUOB:
 
         # Define Constraints    
         constraint = {'type': 'eq', 'fun':lambda weight : np.sum(weight) - 1}
-        objective_function = lambda weight : np.sum((subset_returns @ weight - self.index_returns)**2)
+        objective_function = lambda weight : np.sum((subset_returns @ weight - index_returns)**2)
         
         # Optimization
         result = minimize(objective_function, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds)
