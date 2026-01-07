@@ -188,7 +188,7 @@ class Universe():
             "initial_shape": self.df_return.shape,
             "calendar_dates_removed": dropped_calendar_dates or [],
         }
-        max_missing_frac = 0.05
+        max_missing_frac = 0.10
         
         # Nombre de NaN avant tout traitement
         nan_avant = self.df_return.isna().sum().sum()
