@@ -49,7 +49,7 @@ class QUOB:
     def matrix_dcor(self):
 
         Welsch_function = lambda x: 1 - np.exp(-0.5 * x)
-        min_obs = 126
+        min_obs = 500
 
         n = self.stocks_returns.shape[1]
         dcor_mat = np.zeros((n, n))
@@ -78,7 +78,7 @@ class QUOB:
     def matrix_simplecor(self):
         distance_func = lambda di: np.sqrt(0.5 * (1 - di))
         Welsch_function = lambda x: 1 - np.exp(-0.5 * x)
-        min_obs = 126
+        min_obs = 500
 
         n = self.stocks_returns.shape[1]
         corr_df = pd.DataFrame(self.stocks_returns).corr(min_periods=min_obs)
