@@ -78,9 +78,7 @@ class QUOB:
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
         corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
 
-        base_distance = 0.5 * (1 - corr_matrix)
-        base_distance = np.maximum(base_distance, 0.0)
-        distance_matrix = distance_func(base_distance)
+        distance_matrix = distance_func(corr_matrix)
         distance_matrix = np.nan_to_num(distance_matrix, nan=1.0, posinf=1.0, neginf=1.0)
         distance_matrix = np.nan_to_num(Welsch_function(distance_matrix), nan=1.0, posinf=1.0, neginf=1.0)
         np.fill_diagonal(distance_matrix, 0.0)
