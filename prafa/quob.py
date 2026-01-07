@@ -48,16 +48,23 @@ class QUOB:
 
     def matrix_dcor(self):
 
-        Welsch_function = lambda x : 1 - np.exp(-0.5 * x)
+        Welsch_function = lambda x: 1 - np.exp(-0.5 * x)
+        min_obs = 126
 
         n = self.stocks_returns.shape[1]
         dcor_mat = np.zeros((n, n))
         
         for i in range(n):
+            series_i = self.stocks_returns[:, i]
             for j in range(i, n):
-                dcor_val = dcor.distance_correlation(self.stocks_returns[:, i], self.stocks_returns[:, j])
-                dist = 1 - dcor_val
-                dcor_mat[i, j] = dcor_mat[j, i] = Welsch_function(dist) #Welsch_function(dist)
+                series_j = self.stocks_returns[:, j]
+                mask = np.isfinite(series_i) & np.isfinite(series_j)
+                if mask.sum() < min_obs:
+                    dist = 1.0
+                else:
+                    dcor_val = dcor.distance_correlation(series_i[mask], series_j[mask])
+                    dist = 1 - dcor_val
+                dcor_mat[i, j] = dcor_mat[j, i] = Welsch_function(dist)                
 
         dcor_mat = np.nan_to_num(dcor_mat, nan=1.0, posinf=1.0, neginf=1.0)
         np.fill_diagonal(dcor_mat, 0.0)
@@ -69,14 +76,15 @@ class QUOB:
 
 
     def matrix_simplecor(self):
-        distance_func = lambda di : np.sqrt(0.5*(1 - di))
-        Welsch_function = lambda x : 1 - np.exp(-0.5 * x)
+        distance_func = lambda di: np.sqrt(0.5 * (1 - di))
+        Welsch_function = lambda x: 1 - np.exp(-0.5 * x)
+        min_obs = 126
 
         n = self.stocks_returns.shape[1]
-        with np.errstate(divide="ignore", invalid="ignore"):
-            corr_matrix = np.corrcoef(self.stocks_returns, rowvar=False)
-        corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        corr_df = pd.DataFrame(self.stocks_returns).corr(min_periods=min_obs)
+        corr_matrix = corr_df.to_numpy()
         corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
+        corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
         distance_matrix = distance_func(corr_matrix)
         distance_matrix = np.nan_to_num(distance_matrix, nan=1.0, posinf=1.0, neginf=1.0)
@@ -168,7 +176,14 @@ class QUOB:
     def calc_weights(self):
         self.idx = self.stock_picking(self.stocks_returns.shape[1])
         subset_returns = self.stocks_returns[:, self.idx]
-        
+        index_returns = np.asarray(self.index_returns)
+
+        valid_rows = np.isfinite(index_returns) & np.isfinite(subset_returns).all(axis=1)
+        subset_returns = subset_returns[valid_rows]
+        index_returns = index_returns[valid_rows]
+        if subset_returns.size == 0:
+            raise ValueError("No overlapping non-missing returns available for QUOB optimization.")
+            
         initial_weight = np.ones(len(self.idx))
         initial_weight /= initial_weight.sum()  
         bounds = [(0, 1) for _ in range(len(self.idx))]
