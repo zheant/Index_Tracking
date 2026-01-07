@@ -111,11 +111,47 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
             )
 
         assert all(X_test.index == Y_test.index), "Les index de X_test et Y_test ne sont pas alignés !"
+        #renorm once per window + NaN => cash (0%) : Filtrer les titres investis qui n’ont pas assez de données sur la fenêtre, Pour les NaN restants, NaN ⇒ cash à 0% ce jour-là (via fillna(0) au moment du calcul du portefeuille)
+        min_presence = getattr(args, "min_presence", 0.98)
+        invested_cols = weights_series[weights_series != 0].index.tolist()
+        dropped_weight_before_renorm = 0.0
 
-        return_outsample = X_test @ weights_series
-        tracking_error = (return_outsample - Y_test).std()
-        tracking_errors[X_test.index[-1]] = tracking_error
-        mae[X_test.index[-1]] = (return_outsample - Y_test).abs().mean()
+        if invested_cols:
+            presence = X_test[invested_cols].notna().mean(axis=0)
+            investable_cols = presence[presence >= min_presence].index.tolist()
+
+            dropped = set(invested_cols) - set(investable_cols)
+            if dropped:
+                dropped_weight_before_renorm = float(weights_series.loc[list(dropped)].sum())
+                print(
+                    f"⚠️ Window {start_date.date()} → {end_date.date()}: "
+                    f"dropping {len(dropped)} invested names (presence < {min_presence:.0%}), "
+                    f"dropped weight ≈ {dropped_weight_before_renorm:.2%} before renorm."
+                )
+
+            weights_series = weights_series.copy()
+            if dropped:
+                weights_series.loc[list(dropped)] = 0.0
+
+            weight_sum = float(weights_series.sum())
+            if weight_sum > 0:
+                weights_series /= weight_sum
+            else:
+                print(
+                    f"⚠️ Window {start_date.date()} → {end_date.date()}: "
+                    "all weights dropped; portfolio is all cash."
+                )
+        else:
+            print(
+                f"⚠️ Window {start_date.date()} → {end_date.date()}: "
+                "no non-zero weights after alignment; portfolio is all cash."
+            )
+
+        return_outsample = X_test.fillna(0.0).mul(weights_series, axis=1).sum(axis=1)
+
+        diff = (return_outsample - Y_test).dropna()
+        tracking_errors[X_test.index[-1]] = diff.std()
+        mae[X_test.index[-1]] = diff.abs().mean()
 
         rendements_portefeuille += list(return_outsample)
         rendements_indice += list(Y_test)
