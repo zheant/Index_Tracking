@@ -104,7 +104,16 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
         Y_test = universe.get_index_returns()
         weights = portfolios[start_date]
         weights_series = _align_weights(weights, X_test.columns, target_cardinality=args.cardinality)
-
+        # état juste après alignement ---
+        k_target = getattr(args, "cardinality", None)
+        x_cols = X_test.shape[1]
+        nz_align = int((weights_series.abs() > 1e-12).sum())
+        
+        print(
+            f"[{start_date.date()}→{end_date.date()}] "
+            f"X_cols={x_cols}, nonzero_after_align={nz_align}"
+            + (f", K_target={k_target}" if k_target is not None else "")
+        )
         if X_test.shape[1] < args.cardinality:
             print(
                 f"⚠️ Cleaned universe size ({X_test.shape[1]}) below target cardinality ({args.cardinality}) for window starting {start_date.date()}."
@@ -146,9 +155,27 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
                 f"⚠️ Window {start_date.date()} → {end_date.date()}: "
                 "no non-zero weights after alignment; portfolio is all cash."
             )
-
+          
+        # état après filtre presence + renorm 1x ---
+        nz_presence = int((weights_series.abs() > 1e-12).sum())
+        print(
+            f"[{start_date.date()}→{end_date.date()}] "
+            f"nonzero_after_presence={nz_presence}"
+        )
+        print(
+        f"[{start_date.date()}→{end_date.date()}] "
+        f"dropped_weight_before_renorm={dropped_weight_before_renorm:.2%}"
+    )
+      
         return_outsample = X_test.fillna(0.0).mul(weights_series, axis=1).sum(axis=1)
-
+      
+        # qualité de la série de rendement ---
+        nan_rp = int(return_outsample.isna().sum())
+        print(
+            f"[{start_date.date()}→{end_date.date()}] "
+            f"rp_nan_days={nan_rp} / {len(return_outsample)}"
+        )
+      
         diff = (return_outsample - Y_test).dropna()
         tracking_errors[X_test.index[-1]] = diff.std()
         mae[X_test.index[-1]] = diff.abs().mean()
