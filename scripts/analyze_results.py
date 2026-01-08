@@ -112,7 +112,7 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
 
         assert all(X_test.index == Y_test.index), "Les index de X_test et Y_test ne sont pas alignés !"
         #renorm once per window + NaN => cash (0%) : Filtrer les titres investis qui n’ont pas assez de données sur la fenêtre, Pour les NaN restants, NaN ⇒ cash à 0% ce jour-là (via fillna(0) au moment du calcul du portefeuille)
-        min_presence = getattr(args, "min_presence", 0.98)
+        min_presence = getattr(args, "min_presence", 0.90)
         invested_cols = weights_series[weights_series != 0].index.tolist()
         dropped_weight_before_renorm = 0.0
 
