@@ -55,9 +55,10 @@ def _align_weights(weights, columns: Iterable[str], target_cardinality: int | No
     if series.index.dtype == "int64":
         # If weights came from a numpy array, align to provided columns order
         if len(series) != len(target_cols):
-            print(
-                f"⚠️ Weight length mismatch (weights: {len(series)}, columns: {len(target_cols)}); "
-                "truncating/padding to match cleaned universe."
+            raise ValueError(
+                "Weights are an unlabeled array and length does not match the universe columns: "
+                f"{len(series)} != {len(target_cols)}. Regenerate portfolios with labeled weights "
+                "or ensure the saved weights align to the cleaned universe."
             )
         series = pd.Series(series.values[: len(target_cols)], index=target_cols[: len(series)])
     series = series.reindex(target_cols, fill_value=0)
