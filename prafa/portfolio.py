@@ -35,7 +35,13 @@ class Portfolio:
         self.universe.new_universe(start_datetime, end_datetime)
         sol = Solution(self)
 
-        self.portfolios[end_datetime] = sol.solve() #dictionnire contenant poids
+        weights = sol.solve()
+        if isinstance(weights, dict):
+            weights = pd.Series(weights)
+        elif not isinstance(weights, pd.Series):
+            weights = pd.Series(weights, index=self.universe.get_stock_namme_in_order())
+
+        self.portfolios[end_datetime] = weights  # dictionnire contenant poids
         return self.portfolios[end_datetime]
        
 
