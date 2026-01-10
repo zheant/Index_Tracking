@@ -1,3 +1,4 @@
+import hashlib
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
@@ -232,11 +233,17 @@ class Universe():
         stats["dropped_rows"] = lignes_supprimees
         lignes_apres = self.df_return.shape[0]
         stats["final_shape"] = self.df_return.shape
+        stats["calendar_count"] = int(self.df_return.shape[0])
+        stats["calendar_hash"] = self._hash_calendar(self.df_return.index)
         self.last_cleaning_stats = stats
 
         print(f"Removed {lignes_avant - lignes_apres} rows due to missing values.")
 
-
+    @staticmethod
+    def _hash_calendar(index: pd.Index) -> str:
+        payload = "|".join(ts.isoformat() for ts in index)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    
     def _discover_constituent_files(self) -> tuple[Path, list[int]]:
         candidate_dirs = [
             Path(f"financial_data/{self.args.index}/constituants"),
