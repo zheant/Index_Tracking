@@ -41,8 +41,13 @@ class Portfolio:
         elif not isinstance(weights, pd.Series):
             weights = pd.Series(weights, index=self.universe.get_stock_namme_in_order())
 
-        self.portfolios[end_datetime] = weights  # dictionnire contenant poids
-        return self.portfolios[end_datetime]
+        audit = getattr(self.universe, "last_cleaning_stats", {})
+        self.portfolios[end_datetime] = {
+            "weights": weights,
+            "calendar_hash": audit.get("calendar_hash"),
+            "calendar_count": audit.get("calendar_count"),
+        }
+        return self.portfolios[end_datetime] # dictionnire contenant poids
        
 
     def get_universe(self) -> Universe:
