@@ -99,11 +99,28 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
         start_date = pd.Timestamp(dates[i])
         # veille du prochain rebalance
         end_date = pd.Timestamp(dates[i + 1]) - pd.tseries.offsets.BDay(1)
-
+      
+        portfolio_entry = portfolios[start_date]
+        if isinstance(portfolio_entry, dict) and "weights" in portfolio_entry:
+            weights = portfolio_entry["weights"]
+            saved_calendar_hash = portfolio_entry.get("calendar_hash")
+            saved_calendar_count = portfolio_entry.get("calendar_count")
+        else:
+            weights = portfolio_entry
+            saved_calendar_hash = None
+            saved_calendar_count = None
+      
         universe.new_universe(start_date, end_date, training=False)
         X_test = universe.get_stocks_returns()
         Y_test = universe.get_index_returns()
-        weights = portfolios[start_date]
+        if saved_calendar_hash:
+            current_hash = Universe._hash_calendar(X_test.index)
+            if current_hash != saved_calendar_hash:
+                print(
+                    f"⚠️ Calendar mismatch for window {start_date.date()} → {end_date.date()}: "
+                    f"saved hash {saved_calendar_hash[:8]} (n={saved_calendar_count}), "
+                    f"current hash {current_hash[:8]} (n={len(X_test.index)})."
+                )
         weights_series = _align_weights(weights, X_test.columns, target_cardinality=args.cardinality)
         # état juste après alignement ---
         k_target = getattr(args, "cardinality", None)
