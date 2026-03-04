@@ -94,7 +94,7 @@ Index_Tracking/
   - Les fichiers `{year}.csv` représentent la composition post-reconstitution de juin {year}, active à partir de juillet.
   - `_effective_constituent_year()` : gère le décalage de mois.
   - `update_stock_list()` : charge le bon fichier constituant selon la date effective.
-  - Intersection des univers constituants sur toute la fenêtre d'entraînement pour éviter le look-ahead bias (stocks qui quittent puis reviennent).
+  - ~~Intersection des univers constituants sur toute la fenêtre~~ → supprimée en Phase 7 (biais de survivant).
 - **`_select_constituent_year()`** : fallback sur l'année disponible la plus récente si l'année exacte n'existe pas.
 - **Reset `self.year = -1`** en fin de `new_universe()` pour forcer le rechargement au prochain appel.
 - **`_get_constituents_for_date()`** : méthode sans effet de bord pour consulter les constituants.
@@ -130,8 +130,9 @@ Index_Tracking/
 ## Décisions architecturales clés
 
 ### Anti-look-ahead en entraînement
-- L'univers est basé sur la composition à `start_datetime` (pas `end_datetime`).
-- Intersection des compositions annuelles sur toute la fenêtre pour éliminer les stocks "fantômes".
+- L'univers est basé sur la composition à `end_datetime` (date de décision d'investissement).
+  Les stocks entrés en cours de training sont inclus; les sortants sont absents du fichier constituant.
+  Les stocks avec historique insuffisant sont éliminés par `max_missing_frac`.
 - Winsorisation et filtre de liquidité calculés uniquement sur les données d'entraînement.
 
 ### Anti-look-ahead en test
@@ -157,6 +158,32 @@ Génère aussi `all_permnos.csv` avec l'union de tous les permnos observés.
 
 ### `scripts/download_wrds_russell_data.py`
 Télécharge les données de rendement depuis WRDS (Wharton Research Data Services).
+
+### Phase 7 : Correction de deux erreurs méthodologiques majeures (4 mars 2026)
+
+**Fix #1 — `prafa/universe.py` : référence `end_datetime` pour l'univers de training**
+
+- **Problème** : l'univers d'entraînement était basé sur la composition à `start_datetime` + intersection
+  de toutes les reconstitutions intermédiaires. Cela excluait les stocks entrés en cours de training,
+  créant un biais de survivant — l'univers de réplication s'écartait structurellement de la composition
+  réelle de l'indice au moment de la décision d'investissement.
+- **Correctif** : `ref_date = end_datetime if training else start_datetime` dans `new_universe()`.
+  Suppression du bloc d'intersection inter-années (devenu inutile : les sortants sont naturellement
+  absents du fichier constituant à `end_datetime`; les lacunaires sont éliminés par `max_missing_frac`).
+- **Mode test** inchangé : `ref_date = start_datetime` (composition active sans look-ahead).
+
+**Fix #2 — `scripts/analyze_results.py` : suppression du calendar hash check incorrect**
+
+- **Problème** : le `calendar_hash` stocké dans le `.pkl` est le hash du calendrier d'**entraînement**.
+  Il était comparé au hash du calendrier de **test** — deux périodes distinctes par construction.
+  Ce check déclenchait un faux warning systématique et ne détectait jamais une vraie incohérence.
+- **Correctif** : suppression du bloc `if saved_calendar_hash:` dans `extract_timeseries()`.
+
+**Validation** : run SP500, K=50, QUOB, 2 fenêtres. Logs confirmés :
+- Univers training `[2016-01-02 → 2019-01-02]` : 505 stocks chargés avec `ref=2019-01-02` ✓
+- Aucun warning `Calendar mismatch` dans `analyze_results.py` ✓
+
+---
 
 ### Phase 6 : Contrainte de rendement moyen + analyse du time_limit (4 mars 2026)
 
@@ -199,12 +226,28 @@ python scripts/analyze_results.py \
 
 ---
 
+## Améliorations potentielles identifiées
+
+### Méthodologie — à investiguer
+- **Univers de test** : actuellement on charge la composition à `start_datetime` (= `end_datetime` du training précédent). On pourrait envisager d'utiliser la composition à `end_datetime` du test aussi, pour mieux refléter les constituants réels pendant la période de détention — mais cela introduirait du look-ahead (on ne connaît pas la composition future au moment de l'investissement). La logique actuelle est donc correcte.
+- **Pondération QP avec contrainte μ** : le fallback sans contrainte de rendement moyen (si SLSQP ne converge pas) devrait être loggué et suivi. Si le fallback est fréquent, envisager une formulation plus robuste (ex. relaxation de la contrainte en pénalité).
+- **Convergence ReplicaTOR** : l'algorithme n'atteint jamais sa convergence naturelle (round_limit=100M) même à 10 800s. Explorer des heuristiques de warm-start ou réduire n par clustering préalable.
+- **Distance dcor vs pearson** : le premier run Russell utilisait `pearson` (plus rapide). Comparer les résultats out-of-sample avec `dcor` pour valider le choix.
+- **Cardinalité K** : K=300 sur Russell 3000 (~3000 stocks) = 10% de l'indice. Tester K=100, 200 pour évaluer le trade-off cardinalité / tracking error.
+
+### Infrastructure
+- **Logs persistants** : les logs ReplicaTOR sont perdus (répertoires temporaires supprimés par `_cleanup()`). Envisager de conserver un résumé (rounds exécutés, meilleure solution) par fenêtre dans le `.pkl`.
+- **Licence Gurobi expirée** : la licence WLS (ID 2736279) a expiré. Gurobi n'est plus utilisable pour les runs de validation rapide — utiliser QUOB ou les solveurs lagrange.
+
+---
+
 ## Résultats produits
 
-| Fichier | Indice | Méthode | Cardinalité |
-|---------|--------|---------|-------------|
-| `results/portfolio_russell3000_quob_300.pkl` | Russell 3000 | QUOB | 300 |
-| `results/analysis_russell3000_300/` | Russell 3000 | QUOB | 300 |
+| Fichier | Indice | Méthode | Cardinalité | Notes |
+|---------|--------|---------|-------------|-------|
+| `results/portfolio_russell3000_quob_300.pkl` | Russell 3000 | QUOB | 300 | Run overnight, time_limit=10800s, avant fix Phase 7 |
+| `results/analysis_russell3000_300/` | Russell 3000 | QUOB | 300 | Analyse du run ci-dessus |
+| Run en cours (4 mars 2026) | Russell 3000 | QUOB | 300 | time_limit=1800s, **avec fix Phase 7** |
 
 ---
 
