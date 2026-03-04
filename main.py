@@ -32,6 +32,18 @@ def Main():
     parser.add_argument('--missing_policy', type=str, choices=['auto', 'strict', 'legacy'], default='auto',
                     help='Missing-data handling: auto uses legacy for SP500 and strict otherwise; override to force a policy')
 
+    parser.add_argument('--reconstitution_month', type=int, default=7,
+                    help='Premier mois où la nouvelle composition de l\'indice est active (défaut 7 = juillet pour Russell 3000)')
+
+    parser.add_argument('--max_missing_frac', type=float, default=0.10,
+                    help='Fraction maximale de jours manquants pour conserver un stock (défaut 0.10)')
+    parser.add_argument('--min_trading_frac', type=float, default=0.50,
+                    help='Fraction minimale de jours à rendement non nul pour conserver un stock — filtre de liquidité (défaut 0.50)')
+    parser.add_argument('--winsor_sigma', type=float, default=3.0,
+                    help='Seuil de winsorisation en nombre de σ par titre (0 pour désactiver, défaut 3.0)')
+    parser.add_argument('--hard_clip', type=float, default=1.0,
+                    help='Clip absolu des rendements aberrants avant winsorisation, ex. 1.0 = ±100%% par jour (0 pour désactiver, défaut 1.0)')
+
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")
     parser.add_argument('--end_date', type=str, default="2025-01-02")
@@ -67,7 +79,11 @@ def Main():
     while current_date < end_date:
         dates.append(current_date)
         current_date += time_increment
-    
+
+    # S'assurer que end_date est incluse comme dernière fenêtre d'entraînement
+    if dates[-1] != end_date:
+        dates.append(end_date)
+
     #initialisation des object necessaire pour extraire les portefeuilles dans le temps
     portfolio = Portfolio(Universe(args))
     for rebalancing_date in dates:
@@ -75,7 +91,7 @@ def Main():
         portfolio.rebalance_portfolio(start_datetime, rebalancing_date)
         print(f"Rebalancing from {start_datetime.date()} to {rebalancing_date.date()}")
 
-    
+    portfolio.save_portfolio()
     return None
 
 

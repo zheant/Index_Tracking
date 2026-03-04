@@ -77,7 +77,7 @@ def normalise_constituents(source: Path, destination: Path, union_name: str) -> 
 
     union_name = union_name if union_name.endswith(".csv") else f"{union_name}.csv"
     union_path = destination / union_name
-    pd.DataFrame(sorted(all_permnos), columns=["permno"]).to_csv(union_path, index=False)
+    pd.DataFrame(sorted(all_permnos, key=int), columns=["permno"]).to_csv(union_path, index=False)
     print(f"Saved {len(all_permnos)} unique permnos to {union_path}")
 
     return union_path
