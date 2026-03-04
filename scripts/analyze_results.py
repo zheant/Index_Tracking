@@ -60,7 +60,7 @@ def _align_weights(weights, columns: Iterable[str], target_cardinality: int | No
                 f"{len(series)} != {len(target_cols)}. Regenerate portfolios with labeled weights "
                 "or ensure the saved weights align to the cleaned universe."
             )
-        series = pd.Series(series.values[: len(target_cols)], index=target_cols[: len(series)])
+        series = pd.Series(series.values, index=target_cols)
     series = series.reindex(target_cols, fill_value=0)
 
     non_zero = (series != 0).sum()
@@ -89,18 +89,20 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
     if n < 2:
         raise ValueError("At least two rebalance dates are required to compute out-of-sample returns.")
 
-    rendements_portefeuille = []
-    rendements_indice = []
-    index_dates = []
+    rp_parts: list[pd.Series] = []
+    ri_parts: list[pd.Series] = []
     tracking_errors: Dict[pd.Timestamp, float] = {}
     mae: Dict[pd.Timestamp, float] = {}
 
     for i in range(n - 1):
-        start_date = pd.Timestamp(dates[i])
-        # veille du prochain rebalance
+        # portfolio_key : date à laquelle le portefeuille a été construit (= fin training)
+        portfolio_key = pd.Timestamp(dates[i])
+        # Le test commence le JOUR SUIVANT (la dernière observation du training
+        # ne doit pas être réévaluée en out-of-sample).
+        test_start = portfolio_key + pd.tseries.offsets.BDay(1)
         end_date = pd.Timestamp(dates[i + 1]) - pd.tseries.offsets.BDay(1)
-      
-        portfolio_entry = portfolios[start_date]
+
+        portfolio_entry = portfolios[portfolio_key]
         if isinstance(portfolio_entry, dict) and "weights" in portfolio_entry:
             weights = portfolio_entry["weights"]
             saved_calendar_hash = portfolio_entry.get("calendar_hash")
@@ -109,101 +111,68 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
             weights = portfolio_entry
             saved_calendar_hash = None
             saved_calendar_count = None
-      
-        universe.new_universe(start_date, end_date, training=False)
+
+        universe.new_universe(test_start, end_date, training=False)
         X_test = universe.get_stocks_returns()
         Y_test = universe.get_index_returns()
-        if saved_calendar_hash:
-            current_hash = Universe._hash_calendar(X_test.index)
-            if current_hash != saved_calendar_hash:
-                print(
-                    f"⚠️ Calendar mismatch for window {start_date.date()} → {end_date.date()}: "
-                    f"saved hash {saved_calendar_hash[:8]} (n={saved_calendar_count}), "
-                    f"current hash {current_hash[:8]} (n={len(X_test.index)})."
-                )
         weights_series = _align_weights(weights, X_test.columns, target_cardinality=args.cardinality)
         # état juste après alignement ---
         k_target = getattr(args, "cardinality", None)
         x_cols = X_test.shape[1]
         nz_align = int((weights_series.abs() > 1e-12).sum())
-        
+
         print(
-            f"[{start_date.date()}→{end_date.date()}] "
+            f"[{test_start.date()}→{end_date.date()}] "
             f"X_cols={x_cols}, nonzero_after_align={nz_align}"
             + (f", K_target={k_target}" if k_target is not None else "")
         )
         if X_test.shape[1] < args.cardinality:
             print(
-                f"⚠️ Cleaned universe size ({X_test.shape[1]}) below target cardinality ({args.cardinality}) for window starting {start_date.date()}."
+                f"⚠️ Cleaned universe size ({X_test.shape[1]}) below target cardinality ({args.cardinality}) for window starting {test_start.date()}."
             )
 
-        assert all(X_test.index == Y_test.index), "Les index de X_test et Y_test ne sont pas alignés !"
-        #renorm once per window + NaN => cash (0%) : Filtrer les titres investis qui n’ont pas assez de données sur la fenêtre, Pour les NaN restants, NaN ⇒ cash à 0% ce jour-là (via fillna(0) au moment du calcul du portefeuille)
-        min_presence = getattr(args, "min_presence", 0.90)
+        if not (X_test.index == Y_test.index).all():
+            raise ValueError(
+                f"Les index de X_test et Y_test ne sont pas alignés pour la fenêtre "
+                f"{test_start.date()} → {end_date.date()} !"
+            )
+
+        # Les NaN de rendement en test sont traités comme position cash (rendement 0).
+        # Le filtre min_presence a été supprimé : il calculait le taux de présence
+        # sur TOUTE la fenêtre de test (données futures), introduisant un regard
+        # dans le futur. Le fillna(0) ci-dessous gère correctement les délistings
+        # et les jours sans cotation — pas besoin de pré-filtrer.
         invested_cols = weights_series[weights_series != 0].index.tolist()
-        dropped_weight_before_renorm = 0.0
-
-        if invested_cols:
-            presence = X_test[invested_cols].notna().mean(axis=0)
-            investable_cols = presence[presence >= min_presence].index.tolist()
-
-            dropped = set(invested_cols) - set(investable_cols)
-            if dropped:
-                dropped_weight_before_renorm = float(weights_series.loc[list(dropped)].sum())
-                print(
-                    f"⚠️ Window {start_date.date()} → {end_date.date()}: "
-                    f"dropping {len(dropped)} invested names (presence < {min_presence:.0%}), "
-                    f"dropped weight ≈ {dropped_weight_before_renorm:.2%} before renorm."
-                )
-
-            weights_series = weights_series.copy()
-            if dropped:
-                weights_series.loc[list(dropped)] = 0.0
-
-            weight_sum = float(weights_series.sum())
-            if weight_sum > 0:
-                weights_series /= weight_sum
-            else:
-                print(
-                    f"⚠️ Window {start_date.date()} → {end_date.date()}: "
-                    "all weights dropped; portfolio is all cash."
-                )
-        else:
+        if not invested_cols:
             print(
-                f"⚠️ Window {start_date.date()} → {end_date.date()}: "
+                f"⚠️ Window {test_start.date()} → {end_date.date()}: "
                 "no non-zero weights after alignment; portfolio is all cash."
             )
-          
-        # état après filtre presence + renorm 1x ---
-        nz_presence = int((weights_series.abs() > 1e-12).sum())
+
+        nz_after_align = int((weights_series.abs() > 1e-12).sum())
         print(
-            f"[{start_date.date()}→{end_date.date()}] "
-            f"nonzero_after_presence={nz_presence}"
+            f"[{test_start.date()}→{end_date.date()}] "
+            f"nonzero_after_align={nz_after_align}"
         )
-        print(
-        f"[{start_date.date()}→{end_date.date()}] "
-        f"dropped_weight_before_renorm={dropped_weight_before_renorm:.2%}"
-    )
-      
+
         return_outsample = X_test.fillna(0.0).mul(weights_series, axis=1).sum(axis=1)
-      
+
         # qualité de la série de rendement ---
         nan_rp = int(return_outsample.isna().sum())
         print(
-            f"[{start_date.date()}→{end_date.date()}] "
+            f"[{test_start.date()}→{end_date.date()}] "
             f"rp_nan_days={nan_rp} / {len(return_outsample)}"
         )
-      
+
         diff = (return_outsample - Y_test).dropna()
         tracking_errors[X_test.index[-1]] = diff.std()
         mae[X_test.index[-1]] = diff.abs().mean()
 
-        rendements_portefeuille += list(return_outsample)
-        rendements_indice += list(Y_test)
-        index_dates += list(X_test.index)
+        rp_parts.append(return_outsample)
+        ri_parts.append(Y_test)
 
-    rendements_portefeuille = pd.Series(rendements_portefeuille, index=index_dates)
-    rendements_indice = pd.Series(rendements_indice, index=index_dates)
+    rendements_portefeuille = pd.concat(rp_parts)
+    rendements_indice = pd.concat(ri_parts)
     return rendements_portefeuille, rendements_indice, tracking_errors, mae
 
 
@@ -246,7 +215,7 @@ def _plot_mae(mae_all: Dict[str, Dict[pd.Timestamp, float]], output_dir: Path) -
         plt.scatter(dates, values, label=f"Tracking Absolute Error – {method}", s=25)
     plt.title("Tracking Absolute Error")
     plt.xlabel("Date")
-    plt.ylabel("Écart-type (Tracking Error)")
+    plt.ylabel("Erreur absolue moyenne (MAE)")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -289,8 +258,8 @@ def _plot_error_distributions(rendements: Dict[str, ReturnSeries], indice_refere
         moyenne = erreurs.mean()
         mediane = erreurs.median()
         variance = erreurs.var()
-        skewness = skew(erreurs)
-        kurt = kurtosis(erreurs)
+        skewness = skew(erreurs, nan_policy='omit')
+        kurt = kurtosis(erreurs, nan_policy='omit')
 
         sns.histplot(erreurs, kde=True, bins=200, ax=ax, color="skyblue", edgecolor="black")
         ax.axvline(moyenne, color="red", linestyle="--", linewidth=1.5, label=f"Moyenne: {moyenne:.5f}")
@@ -335,6 +304,14 @@ def _build_args(cli_args: argparse.Namespace, solution_name: str) -> argparse.Na
         start_date=cli_args.start_date,
         end_date=cli_args.end_date,
         missing_policy=cli_args.missing_policy,
+        min_presence=getattr(cli_args, "min_presence", 0.90),
+        # Paramètres de nettoyage : doivent correspondre exactement à ceux
+        # utilisés lors de la génération des portefeuilles (main.py).
+        reconstitution_month=getattr(cli_args, "reconstitution_month", 7),
+        max_missing_frac=getattr(cli_args, "max_missing_frac", 0.10),
+        min_trading_frac=getattr(cli_args, "min_trading_frac", 0.50),
+        winsor_sigma=getattr(cli_args, "winsor_sigma", 3.0),
+        hard_clip=getattr(cli_args, "hard_clip", 1.0),
     )
 
 
@@ -349,6 +326,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start_date", default="2014-01-02", help="Training start date used for the portfolios.")
     parser.add_argument("--end_date", default="2023-12-31", help="Training end date used for the portfolios.")
     parser.add_argument("--output_dir", default=None, help="Directory to write plots (default: <result_path>/analysis_<index>_<cardinality>).")
+    parser.add_argument("--min_presence", type=float, default=0.90,
+        help="Minimum fraction of non-missing observations required to keep an invested asset in a backtest window (default: 0.90).")
+    parser.add_argument("--reconstitution_month", type=int, default=7,
+        help="Premier mois où la nouvelle composition est active (défaut 7). Doit correspondre à main.py.")
+    parser.add_argument("--max_missing_frac", type=float, default=0.10,
+        help="Fraction maximale de NaN tolérée par stock (défaut 0.10). Doit correspondre à main.py.")
+    parser.add_argument("--min_trading_frac", type=float, default=0.50,
+        help="Fraction minimale de jours à rendement non nul (défaut 0.50). Doit correspondre à main.py.")
+    parser.add_argument("--winsor_sigma", type=float, default=3.0,
+        help="Seuil de winsorisation en σ (0 pour désactiver, défaut 3.0). Doit correspondre à main.py.")
+    parser.add_argument("--hard_clip", type=float, default=1.0,
+        help="Clip absolu des rendements aberrants en ±fraction (défaut 1.0 = ±100%%). Doit correspondre à main.py.")
     parser.add_argument(
         "--missing_policy",
         choices=["auto", "strict", "legacy"],
@@ -371,7 +360,7 @@ def main() -> None:
 
     method_paths = {}
     for solution in cli_args.solutions:
-        path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}.json"
+        path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}.pkl"
         method_paths[solution] = path
 
     rendements: Dict[str, ReturnSeries] = {}
