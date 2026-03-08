@@ -57,6 +57,8 @@ class Portfolio:
             suffix = "_phase16_pool_a_only"
         elif getattr(self.universe.args, 'phase18_qp_index', False):
             suffix = "_phase18_qp_index"
+        elif getattr(self.universe.args, 'phase19_medoid_capweight', False):
+            suffix = "_phase19_medoid_capweight"
         elif getattr(self.universe.args, 'min_trading_frac', 0.50) == 0.0 and getattr(self.universe.args, 'no_stratification', False):
             suffix = "_phase17_no_strat"
         elif getattr(self.universe.args, 'min_trading_frac', 0.50) == 0.0:
@@ -243,6 +245,22 @@ class Solution:
                     assignments_b = self._nearest_medoid(pool_b_rets, medoid_rets)
                     for bi, stock_name in enumerate(available_b):
                         cluster_mktcap[assignments_b[bi]] += full_mktcap_dict.get(stock_name, 0.0)
+            # Phase 19: each medoid weighted by its own mktcap only
+            if getattr(self.universe.args, 'phase19_medoid_capweight', False):
+                medoid_mktcap = np.array([
+                    full_mktcap_dict.get(filtered_stocks[med_i], 0.0)
+                    for med_i in medoid_local
+                ])
+                total_med = medoid_mktcap.sum()
+                if total_med > 0:
+                    medoid_mktcap /= total_med
+                else:
+                    medoid_mktcap = np.ones(K_full) / K_full
+                global_weights = np.zeros(n_total)
+                for k, med_i in enumerate(medoid_local):
+                    global_weights[med_i] = medoid_mktcap[k]
+                return global_weights
+
             total_cluster = cluster_mktcap.sum()
             if total_cluster > 0:
                 cluster_mktcap /= total_cluster
@@ -294,6 +312,31 @@ class Solution:
                 print(f"Warning: Phase 18 QP did not converge: {result.message}")
             for k, gidx in enumerate(medoid_globals):
                 global_weights[gidx] = max(0.0, result.x[k])
+            return global_weights
+
+        # Phase 19: each medoid weighted by its own mktcap only — eliminates
+        # the poids/rendements decoupling inherent in cluster cap-weighting.
+        if getattr(self.universe.args, 'phase19_medoid_capweight', False):
+            for quob_obj, pool_a_local, pool_a_stocks in [
+                (quob_large, pool_a_large_local, pool_a_large_stocks),
+                (quob_small, pool_a_small_local, pool_a_small_stocks),
+            ]:
+                for med_local_i in quob_obj.idx:
+                    stock_name = pool_a_stocks[med_local_i]
+                    global_weights[pool_a_local[med_local_i]] = full_mktcap_dict.get(stock_name, 0.0)
+            total = global_weights.sum()
+            if total > 0:
+                global_weights /= total
+            else:
+                medoid_globals = [
+                    pool_a_local[med_i]
+                    for quob_obj, pool_a_local in [
+                        (quob_large, pool_a_large_local),
+                        (quob_small, pool_a_small_local),
+                    ]
+                    for med_i in quob_obj.idx
+                ]
+                global_weights[medoid_globals] = 1.0 / len(medoid_globals)
             return global_weights
 
         # Cap-weighting (Phase 12 / 16): each medoid receives the sum of mktcap of

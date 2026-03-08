@@ -60,6 +60,9 @@ def Main():
                     help='Phase 18 : remplacer le cap-weighting par un QP ciblant r_index directement. '
                          'Minimise ||R_medoids @ w - r_index||² s.t. Σw=1, w≥0. '
                          'Pool B non détenu mais son influence passe par la cible index.')
+    parser.add_argument('--phase19_medoid_capweight', action='store_true', default=False,
+                    help='Phase 19 : pondérer chaque médoïde par sa propre mktcap uniquement. '
+                         'Élimine le découplage poids/rendements du cap-weighting par cluster.')
 
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")

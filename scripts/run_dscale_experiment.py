@@ -15,6 +15,12 @@ Usage (full sweep):
 Usage (analysis only, PKLs already generated):
     python scripts/run_dscale_experiment.py \\
         --d_scales 0.5 1.0 2.0 5.0 10.0 --skip_runs
+
+Usage (new sweep with thermal fix, distinct PKL names):
+    python scripts/run_dscale_experiment.py \\
+        --d_scales 0.5 1.0 2.0 5.0 10.0 \\
+        --experiment_tag phase20_thermal_fix \\
+        --replicator_cores 128 --time_limit 112
 """
 from __future__ import annotations
 
@@ -75,12 +81,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--replicator_cores", type=int, default=8)
     p.add_argument("--time_limit", type=float, default=225)
     p.add_argument("--strata_large_size", type=int, default=1000)
+    p.add_argument("--no_stratification", action="store_true", default=False)
+    p.add_argument("--phase19_medoid_capweight", action="store_true", default=False)
 
     # Paths
     p.add_argument("--data_path", default="financial_data")
     p.add_argument("--result_path", default="results")
     p.add_argument("--output_dir", default=None,
                    help="Where to write plots (default: results/dscale_experiment).")
+    p.add_argument("--experiment_tag", default="",
+                   help="Optional tag appended to PKL names to distinguish experiment variants "
+                        "(e.g. 'phase20_thermal_fix'). Allows re-running the sweep without "
+                        "overwriting Phase 15 PKLs.")
     return p.parse_args()
 
 
@@ -94,6 +106,8 @@ def _pkl_suffix(args: argparse.Namespace) -> str:
         return "_phase16_pool_a_only"
     if getattr(args, 'phase18_qp_index', False):
         return "_phase18_qp_index"
+    if getattr(args, 'phase19_medoid_capweight', False):
+        return "_phase19_medoid_capweight"
     if getattr(args, 'min_trading_frac', 0.50) == 0.0 and getattr(args, 'no_stratification', False):
         return "_phase17_no_strat"
     if getattr(args, 'min_trading_frac', 0.50) == 0.0:
@@ -102,11 +116,12 @@ def _pkl_suffix(args: argparse.Namespace) -> str:
 
 
 def tagged_pkl(args: argparse.Namespace, d_scale: float) -> Path:
-    """PKL path including the d_scale tag."""
+    """PKL path including the d_scale tag (and optional experiment_tag)."""
     suffix = _pkl_suffix(args)
+    exp_tag = f"_{args.experiment_tag}" if getattr(args, "experiment_tag", "") else ""
     tag = f"dscale_{d_scale:g}"
     return Path(args.result_path) / (
-        f"portfolio_{args.index}_{args.solution_name}_{args.cardinality}{suffix}_{tag}.pkl"
+        f"portfolio_{args.index}_{args.solution_name}_{args.cardinality}{suffix}{exp_tag}_{tag}.pkl"
     )
 
 
@@ -147,6 +162,10 @@ def run_one(args: argparse.Namespace, d_scale: float) -> None:
         "--strata_large_size", str(args.strata_large_size),
         "--d_scale", str(d_scale),
     ]
+    if args.no_stratification:
+        cmd.append("--no_stratification")
+    if args.phase19_medoid_capweight:
+        cmd.append("--phase19_medoid_capweight")
 
     sep = "=" * 64
     print(f"\n{sep}\n[d_scale={d_scale:g}] Launching run\n{sep}\n")
@@ -190,7 +209,7 @@ def build_analysis_args(args: argparse.Namespace) -> Namespace:
 # Summary bar chart
 # ---------------------------------------------------------------------------
 
-def plot_summary(metrics: Dict[float, dict], output_dir: Path) -> None:
+def plot_summary(metrics: Dict[float, dict], output_dir: Path, experiment_tag: str = "") -> None:
     d_scales = sorted(metrics)
     labels = [f"{d:g}" for d in d_scales]
     x = list(range(len(d_scales)))
@@ -223,7 +242,10 @@ def plot_summary(metrics: Dict[float, dict], output_dir: Path) -> None:
     axes[2].set_xlabel("d_scale")
     axes[2].legend()
 
-    plt.suptitle("Impact de d_scale — quob_stratified Russell 3000", fontsize=13, y=1.02)
+    title = "Impact de d_scale — quob_stratified Russell 3000"
+    if experiment_tag:
+        title += f" [{experiment_tag}]"
+    plt.suptitle(title, fontsize=13, y=1.02)
     plt.tight_layout()
     out = output_dir / "dscale_summary_metrics.png"
     plt.savefig(out, bbox_inches="tight")
@@ -238,9 +260,11 @@ def plot_summary(metrics: Dict[float, dict], output_dir: Path) -> None:
 def main() -> None:
     args = parse_args()
 
+    exp_tag = getattr(args, "experiment_tag", "")
+    default_output_name = f"dscale_experiment_{exp_tag}" if exp_tag else "dscale_experiment"
     output_dir = (
         Path(args.output_dir) if args.output_dir
-        else Path(args.result_path) / "dscale_experiment"
+        else Path(args.result_path) / default_output_name
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +318,7 @@ def main() -> None:
     _plot_mae(mae_all, output_dir)
     _plot_combined(rendements, indice_reference, output_dir)
     _plot_error_distributions(rendements, indice_reference, output_dir)
-    plot_summary(summary_metrics, output_dir)
+    plot_summary(summary_metrics, output_dir, experiment_tag=getattr(args, "experiment_tag", ""))
 
     # ---- Step 4: console summary --------------------------------------------
     sep = "=" * 72

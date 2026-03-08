@@ -20,6 +20,7 @@ Index_Tracking/
 ├── scripts/
 │   ├── analyze_results.py           # Backtest et visualisation
 │   ├── run_dscale_experiment.py     # Sweep automatisé de d_scale
+│   ├── plot_regime_change.py        # Graphique changement de régime large/small caps
 │   ├── prepare_russell_constituents.py
 │   ├── download_wrds_russell_data.py
 │   └── download_mktcap_data.py
@@ -50,6 +51,9 @@ Index_Tracking/
 | `--time_limit` | `300` | Limite de temps ReplicaTOR et Gurobi (s) |
 | `--d_scale` | `1.0` | D_scale_factor ReplicaTOR |
 | `--strata_large_size` | `1000` | Taille de la strate large/mid cap (quob_stratified) |
+| `--no_stratification` | `False` | Désactive la stratification — un seul QUOB sur Pool A entier |
+| `--phase18_qp_index` | `False` | Phase 18 : pondération QP ciblant r_index |
+| `--phase19_medoid_capweight` | `False` | Phase 19 : pondération par mktcap du médoïde uniquement |
 
 ---
 
@@ -142,20 +146,28 @@ Le biais de liquidité n'est pas une conséquence indirecte — il est **directe
 - **d_scale=5** — dispersion forcée : sous-performance + variance ×2.
 - La racine du problème : les stocks Pool B **ne peuvent pas être détenus** (illiquides → cash drag en test). Tout système forçant le portefeuille à cibler leur rendement impose des poids négatifs implicites sur les actifs performants.
 
-### Pistes non encore testées (Phase 16+)
+### Phases testées (16–19)
 
-**Piste 1 — Pool A cap-weighting uniquement (Phase 16)** *(priorité)*
-- Exclure Pool B du cap-weighting : `poids_médoïde_j = Σ mktcap(cluster_j, Pool A) / mktcap_Pool_A_total`
-- Renormalisation sur Pool A → somme des poids = 1, Pool B ignoré économiquement
-- `min_trading_frac = 0.20` conservé → univers réduit à ~80-85% du Russell 3000
-- Élimine le biais de liquidité et la sensibilité aux changements de régime
-- Contrepartie : on réplique un "Russell 3000 filtré par liquidité", pas l'indice exact
+**Phase 16 — Pool A cap-weighting uniquement**
+- `poids_médoïde_j = Σ mktcap(cluster_j, Pool A) / mktcap_Pool_A_total` — Pool B ignoré
+- Biais : +0.00004/j (+1%/an), variance ~0.000054 — quasi-identique à Phase 12
+- Conclusion : exclure Pool B du cap-weighting ne suffit pas à éliminer le biais structurel
 
-**Piste 2 — Sans filtre de liquidité (Phase 17)**
-- Supprimer `min_trading_frac` → tous les constituants sont candidats médoïdes, pas de séparation Pool A/B
-- Réplication fidèle de l'indice sur le papier, sans biais de liquidité
-- Limitation pratique : médoïdes illiquides inexécutables pour portefeuilles institutionnels (>10M$) — acceptable en contexte académique
-- À tester après Phase 16
+**Phase 17 — Sans filtre de liquidité**
+- `min_trading_frac=0.0` → Pool B vide, tous les stocks candidats médoïdes
+- Biais : +0.00019/j (+4.8%/an), variance 0.000052 — biais aggravé
+- Phase 17 sans stratification (`--no_stratification`) : biais +0.00017/j, variance 0.000103 (×2)
+- Conclusion : le biais vient du cap-weighting par cluster, pas de la séparation Pool A/B
+
+**Phase 18 — QP ciblant r_index**
+- `min ||R_med @ w - r_index||²  s.t. Σw=1, w≥0`
+- Biais : −0.00014/j (−3.5%/an), variance 0.000007 (×7 plus faible)
+- Conclusion : élimine la sur-performance mais introduit une sous-performance chronique — overfitting sur training
+
+**Phase 19 — Médoïde cap-weighting pur**
+- `poids_médoïde_j = mktcap(médoïde_j) / Σ mktcap(médoïdes)`
+- Biais : −0.000107/j (−2.7%/an), variance identique à Ph.12
+- Conclusion : empire le biais dans l'autre sens. Le médoïde est sélectionné pour sa centralité, pas pour être le plus grand cap du cluster → sous-représentation systématique des mega-caps → sous-performance chronique. La variance est inchangée : c'est la sélection des médoïdes qui domine, pas la méthode de pondération.
 
 ### Le Russell 3000 est un mauvais candidat pour cette méthode
 | Indice | Réplicabilité | Raison |
@@ -180,6 +192,11 @@ Le biais de liquidité n'est pas une conséquence indirecte — il est **directe
 | `portfolio_russell3000_quob_stratified_300_phase12_capweight.pkl` | QUOB stratifié Ph.12 | **Référence — biais +0.00004/j** |
 | `portfolio_russell3000_quob_stratified_300.pkl` | QUOB stratifié Ph.14 | QP ciblé r_strate, biais −0.00007/j |
 | `portfolio_russell3000_quob_stratified_300_dscale_{X}.pkl` | QUOB stratifié Ph.15 | Sweep d_scale ∈ {0.5,1,2,5,10} |
+| `portfolio_russell3000_quob_stratified_300_phase16_pool_a_only.pkl` | QUOB stratifié Ph.16 | Pool A cap-weight uniquement, biais +0.00004/j |
+| `portfolio_russell3000_quob_stratified_300_phase17_no_liq_filter.pkl` | QUOB stratifié Ph.17 | Sans filtre liquidité, biais +0.00019/j |
+| `portfolio_russell3000_quob_stratified_300_phase17_no_strat_dscale_{X}.pkl` | QUOB Ph.17 no-strat | Sweep d_scale, no_stratification |
+| `portfolio_russell3000_quob_stratified_300_phase18_qp_index.pkl` | QUOB stratifié Ph.18 | QP sur r_index, biais −0.00014/j, variance ×7 plus faible |
+| `portfolio_russell3000_quob_stratified_300_phase19_medoid_capweight.pkl` | QUOB stratifié Ph.19 | Médoïde cap-weight pur, biais −0.000107/j (−2.7%/an) — empire le biais dans l'autre sens |
 
 ---
 
@@ -194,24 +211,53 @@ python main.py --index russell3000 --cardinality 300 --solution_name quob_strati
   --distance_method pearson --missing_policy strict --hard_clip 1.0
 ```
 
-### Phase 16 — Pool A cap-weighting uniquement (à implémenter)
+### Phase 16 — Pool A cap-weighting uniquement
 ```bash
-# Même commande, cap-weighting modifié dans portfolio.py pour exclure Pool B
 python main.py --index russell3000 --cardinality 300 --solution_name quob_stratified \
   --start_date 2014-01-02 --end_date 2023-12-31 \
   --rebalancing 6 --min_trading_frac 0.20 \
   --replicator_cores 128 --time_limit 112 \
-  --distance_method pearson --missing_policy strict --hard_clip 1.0
+  --distance_method pearson --missing_policy strict --hard_clip 1.0 \
+  --exclude_pool_b_capweight
 ```
 
-### Phase 17 — Sans filtre de liquidité (à implémenter)
+### Phase 17 — Sans filtre de liquidité
 ```bash
-# min_trading_frac=0.0 → pas de Pool B, tous les stocks sont candidats médoïdes
 python main.py --index russell3000 --cardinality 300 --solution_name quob_stratified \
   --start_date 2014-01-02 --end_date 2023-12-31 \
   --rebalancing 6 --min_trading_frac 0.0 \
   --replicator_cores 128 --time_limit 112 \
   --distance_method pearson --missing_policy strict --hard_clip 1.0
+```
+
+### Phase 17 — Sans stratification
+```bash
+python main.py --index russell3000 --cardinality 300 --solution_name quob_stratified \
+  --start_date 2014-01-02 --end_date 2023-12-31 \
+  --rebalancing 6 --min_trading_frac 0.0 \
+  --replicator_cores 128 --time_limit 112 \
+  --distance_method pearson --missing_policy strict --hard_clip 1.0 \
+  --no_stratification
+```
+
+### Phase 18 — QP ciblant r_index
+```bash
+python main.py --index russell3000 --cardinality 300 --solution_name quob_stratified \
+  --start_date 2014-01-02 --end_date 2023-12-31 \
+  --rebalancing 6 --min_trading_frac 0.20 \
+  --replicator_cores 128 --time_limit 112 \
+  --distance_method pearson --missing_policy strict --hard_clip 1.0 \
+  --phase18_qp_index
+```
+
+### Phase 19 — Médoïde cap-weighting pur
+```bash
+python main.py --index russell3000 --cardinality 300 --solution_name quob_stratified \
+  --start_date 2014-01-02 --end_date 2023-12-31 \
+  --rebalancing 6 --min_trading_frac 0.20 \
+  --replicator_cores 128 --time_limit 112 \
+  --distance_method pearson --missing_policy strict --hard_clip 1.0 \
+  --phase19_medoid_capweight
 ```
 
 ### Analyse Russell 3000
@@ -223,13 +269,44 @@ python scripts/analyze_results.py \
   --missing_policy strict --hard_clip 1.0
 ```
 
-### Sweep d_scale
+### Sweep d_scale (Phase 12 référence)
 ```bash
 python scripts/run_dscale_experiment.py \
     --d_scales 0.5 1.0 2.0 5.0 10.0 \
     --replicator_cores 128 --time_limit 112
 # Analyse seule (PKLs déjà présents) :
 python scripts/run_dscale_experiment.py --d_scales 0.5 1.0 2.0 5.0 10.0 --skip_runs
+```
+
+### Sweep d_scale Phase 20 — fix thermique + architecture Phase 17 no-strat
+```bash
+# Architecture : min_trading_frac=0.0, pas de stratification (= Phase 17 no-strat + fix thermique)
+python scripts/run_dscale_experiment.py \
+    --d_scales 0.5 1.0 2.0 5.0 10.0 \
+    --min_trading_frac 0.0 --no_stratification \
+    --experiment_tag phase20_thermal_fix \
+    --replicator_cores 128 --time_limit 112
+# Analyse seule (PKLs déjà présents) :
+python scripts/run_dscale_experiment.py \
+    --d_scales 0.5 1.0 2.0 5.0 10.0 \
+    --min_trading_frac 0.0 --no_stratification \
+    --experiment_tag phase20_thermal_fix --skip_runs
+```
+
+### Sweep d_scale Phase 17 no-strat
+```bash
+python scripts/run_dscale_experiment.py \
+    --d_scales 0.5 1.0 2.0 5.0 10.0 \
+    --min_trading_frac 0.0 --no_stratification \
+    --replicator_cores 128 --time_limit 112 \
+    --output_dir results/dscale_experiment_phase17_no_strat
+```
+
+### Graphique changement de régime
+```bash
+python scripts/plot_regime_change.py
+# Paramètres optionnels :
+python scripts/plot_regime_change.py --large_n 1000 --output results/regime_change.png
 ```
 
 ### Téléchargement market cap (si à refaire)
@@ -252,6 +329,7 @@ python scripts/download_mktcap_data.py \
 
 ## Améliorations potentielles
 
+- ~~**Normalisation des températures ReplicaTOR par d_scale**~~ **FAIT (Phase 20)** : `prafa/quob.py` passe maintenant `T_max = 0.01 * d_scale` et `T_min = 0.00001 * d_scale`. Le ratio ΔE/T est désormais invariant au choix de d_scale. Re-sweep avec `--experiment_tag phase20_thermal_fix` pour isoler l'effet pur du ratio D_scale/B_scale (sans artefact thermique). La non-monotonicité Phase 15 (d_scale=5 → variance ×2) peut être réelle ou un artefact — la Phase 20 tranchera.
 - **Cash drag sur délistings** : redistribuer dynamiquement les poids des stocks délistés vers les actifs en test — probablement le levier le plus impactant pour réduire le gap post-2020 sur Russell.
 - **Distance Pearson sur jours actifs uniquement** : calculer la corrélation uniquement sur les jours où les deux stocks tradent (`r_i ≠ 0` AND `r_j ≠ 0`) — élimine le gonflement artificiel de corrélation entre illiquides. Modification dans `matrix_utils.py`.
 - **EWMA des rendements** : pondération exponentielle `r̃_{i,t} = λ^{(T-t)/2} × r_{i,t}` avant calcul de distance et QP — meilleure alternative à une fenêtre courte.

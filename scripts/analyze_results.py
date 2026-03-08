@@ -293,6 +293,7 @@ def _plot_error_distributions(rendements: Dict[str, ReturnSeries], indice_refere
     plt.close()
 
 
+
 def _build_args(cli_args: argparse.Namespace, solution_name: str) -> argparse.Namespace:
     return Namespace(
         index=cli_args.index,
