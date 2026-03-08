@@ -1,9 +1,9 @@
 import numpy as np
 from prafa.universe import Universe
 from prafa.quob import QUOB
+from prafa.matrix_utils import compute_dcor_matrix, compute_simplecor_matrix
 from prafa.gurobi import Gurobi
 from datetime import datetime
-import time
 import pandas as pd
 import pickle
 import os
@@ -52,7 +52,16 @@ class Portfolio:
     def save_portfolio(self):
         result_path = self.universe.args.result_path
         os.makedirs(result_path, exist_ok=True)
-        path = f'{result_path}/portfolio_{self.universe.args.index}_{self.universe.args.solution_name}_{self.universe.args.cardinality}.pkl'
+        suffix = ""
+        if getattr(self.universe.args, 'exclude_pool_b_capweight', False):
+            suffix = "_phase16_pool_a_only"
+        elif getattr(self.universe.args, 'phase18_qp_index', False):
+            suffix = "_phase18_qp_index"
+        elif getattr(self.universe.args, 'min_trading_frac', 0.50) == 0.0 and getattr(self.universe.args, 'no_stratification', False):
+            suffix = "_phase17_no_strat"
+        elif getattr(self.universe.args, 'min_trading_frac', 0.50) == 0.0:
+            suffix = "_phase17_no_liq_filter"
+        path = f'{result_path}/portfolio_{self.universe.args.index}_{self.universe.args.solution_name}_{self.universe.args.cardinality}{suffix}.pkl'
         with open(path, 'wb') as f:
             pickle.dump(self.portfolios, f)
             print('les portefeuilles ont été enregistrés!! pret a réalisé le backtest')
@@ -75,7 +84,6 @@ class Solution:
         self.portfolio = portfolio
         self.universe =  portfolio.get_universe()
         self.solution_name = self.universe.args.solution_name
-        self.num_assets = self.universe.get_number_of_stocks()
         self.K = self.universe.args.cardinality
         self.distance_method = getattr(self.universe.args, "distance_method", "dcor")
         self.simple_corr = self.distance_method == "pearson"
@@ -89,118 +97,6 @@ class Solution:
         self.stock_list = self.universe.get_stock_namme_in_order()
 
 
-        self.eps = 0.0001
-        self.coefficient = 1000
-
-
-
-    def objective_function(
-        self,
-        weight : list,
-    ) -> list :
-        error = self.new_return @ weight - self.new_index
-        error = np.sum(error**2)
-
-        return error
-
-
-    def weight_sum_constraint(
-        self,
-        weight : list,
-    ) -> list :
-        return np.sum(weight) - 1
-
-
-
-
-    def cardinality_constraint2(
-        self,
-        weight : list,
-    ):
-        weight = 1 / ( 1 + np.e ** ( - self.coefficient * ( weight - self.eps) ) )
-        return - np.sum(weight) + self.K
-
-
-
-    def lagrange_full_replication(
-        self
-    ) -> dict :
-        # Define initial weight
-        initial_weight = np.ones(self.num_assets)
-        initial_weight /= initial_weight.sum()
-        bounds = [(0, 1) for _ in range(self.num_assets)]
-
-        # Define Constraints
-        constraint = {'type': 'eq', 'fun': self.weight_sum_constraint}
-
-        # Optimization
-        result = minimize(self.objective_function, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds)
-        if not result.success:
-            print(f"Warning: lagrange_full SLSQP did not converge: {result.message}")
-        weights = pd.Series(result.x, index=self.stock_list)
-        return weights
-
-
-    def lagrange_partial_ours(
-        self
-    ) -> dict :
-        seed_value = 42
-        np.random.seed(seed_value)
-
-        trial = 1
-        while True:
-            start_time = time.time()
-            # Define initial weight
-            initial_weight = np.random.rand(self.num_assets)
-            initial_weight /= initial_weight.sum()
-            bounds = [(0, 1) for _ in range(self.num_assets)]
-
-            constraint = [{'type': 'eq', 'fun': self.weight_sum_constraint},
-                        {'type': 'ineq', 'fun': self.cardinality_constraint2}]
-
-            # Optimization
-            result = minimize(self.objective_function, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds, options={'maxiter': 200})
-            if not result.success:
-                print(f"Warning: lagrange_ours SLSQP trial {trial} did not converge: {result.message}")
-            self.optimal_weight = result.x
-            self.stock2weight = {}
-            for i in range(len(self.stock_list)):
-                if result.x[i] < self.eps:
-                    self.stock2weight[self.stock_list[i]] = 0
-                else:
-                    self.stock2weight[self.stock_list[i]] = result.x[i]
-
-            # Calculate Top K weight sum
-            topK_weight_sum = 0
-            sorted_weights = sorted(self.stock2weight.items(), key=lambda x: x[1], reverse=True)
-            for stock, weight in sorted_weights[:self.K]:
-                topK_weight_sum += weight
-
-            count = 0
-            for stock, weight in sorted_weights:
-                if (weight >= 0.0001):
-                    count += 1
-
-            # To avoid local optima
-            if trial > 50:
-                print("No portfolio satisfies the constraints")
-                break
-            if topK_weight_sum < 0.97 or topK_weight_sum > 1.01:
-                print("topK weight sum", topK_weight_sum)
-                trial += 1
-                continue
-            if (count > self.K):
-                print("count:", count)
-                trial += 1
-                continue
-            else:
-                print("trial : ", trial)
-                print(f'sec : {time.time() - start_time}')
-                print(f'min : {(time.time() - start_time)/60}')
-                break
-
-        return np.array(list(self.stock2weight.values()))
-
 
 
     def quob(self):
@@ -211,19 +107,271 @@ class Solution:
             simple_corr=self.simple_corr,
             replicator_cores=self.universe.args.replicator_cores,
             time_limit=self.universe.args.time_limit,
+            index_weights=getattr(self.universe, 'mktcap_weights', None),
+            d_scale=getattr(self.universe.args, 'd_scale', 1.0),
         )
         return obj.get_weights()
 
-    def quob_cor(self):
-        obj = QUOB(
-            self.new_return,
-            self.new_index,
-            self.universe.args.cardinality,
-            simple_corr=True,
+    def stratified_quob(self):
+        """Two-pool stratified k-medoids with Neyman allocation.
+
+        Pool A (selection pool): stocks that passed all training filters. Used for
+        distance matrix computation and ReplicaTOR medoid selection.
+
+        Pool B (weighting pool): stocks that passed the NaN filter but failed the
+        liquidity filter. Too illiquid to be reliable medoids, but their market-cap
+        weight must be correctly attributed to the nearest medoid to mirror the index
+        construction — eliminating the quality/survivorship bias from renormalising
+        cap weights over the filtered subset only.
+
+        Strata boundaries are defined on the full pre-liquidity universe (Pool A + B),
+        sorted by market cap. After QUOB selects medoids from Pool A per stratum,
+        each Pool B stock is assigned to its nearest medoid (max Pearson correlation)
+        within the same stratum. Cluster weights aggregate ALL stocks.
+
+        Falls back to regular QUOB if market-cap data is unavailable.
+        """
+        mktcap_weights = getattr(self.universe, 'mktcap_weights', None)
+        if mktcap_weights is None:
+            print("No market-cap weights available; falling back to regular QUOB.")
+            return self.quob()
+
+        # Two-pool data
+        full_mktcap = getattr(self.universe, 'full_mktcap_weights', mktcap_weights)
+        pre_liq_columns = list(getattr(self.universe, 'pre_liquidity_columns', self.stock_list))
+        filtered_stocks = list(self.stock_list)  # Pool A stock names
+        filtered_set = set(filtered_stocks)
+
+        # Cap-weight dict for all pre-liquidity stocks
+        full_mktcap_dict = {s: float(full_mktcap[i]) for i, s in enumerate(pre_liq_columns)}
+
+        # --- 1. Stratum boundaries on FULL pre-liquidity universe ---
+        strata_large_size = getattr(self.universe.args, 'strata_large_size', 1000)
+        sorted_pre_liq = np.argsort(full_mktcap)[::-1]
+        n_large_full = max(1, min(strata_large_size, len(sorted_pre_liq) - 1))
+
+        large_pre_liq_set = {pre_liq_columns[i] for i in sorted_pre_liq[:n_large_full]}
+        small_pre_liq_set = {pre_liq_columns[i] for i in sorted_pre_liq[n_large_full:]}
+
+        # Pool A indices (into self.new_return) and stock names per stratum
+        pool_a_large_local = [i for i, s in enumerate(filtered_stocks) if s in large_pre_liq_set]
+        pool_a_small_local = [i for i, s in enumerate(filtered_stocks) if s in small_pre_liq_set]
+        pool_a_large_stocks = [filtered_stocks[i] for i in pool_a_large_local]
+        pool_a_small_stocks = [filtered_stocks[i] for i in pool_a_small_local]
+
+        # Pool B stock names per stratum
+        pool_b_large_stocks = [s for s in pre_liq_columns if s in large_pre_liq_set and s not in filtered_set]
+        pool_b_small_stocks = [s for s in pre_liq_columns if s in small_pre_liq_set and s not in filtered_set]
+
+        if len(pool_a_large_local) == 0 or len(pool_a_small_local) == 0:
+            print("Warning: one stratum has no Pool A stocks; falling back to regular QUOB.")
+            return self.quob()
+
+        # Stratum market-cap fractions
+        pool_b_in_capweight = not getattr(self.universe.args, 'exclude_pool_b_capweight', False)
+        if pool_b_in_capweight:
+            # Full pre-liquidity universe (Pool A + Pool B) — Phase 12 reference
+            w_large = sum(full_mktcap_dict.get(s, 0.0) for s in large_pre_liq_set)
+            w_small = sum(full_mktcap_dict.get(s, 0.0) for s in small_pre_liq_set)
+        else:
+            # Pool A only — Phase 16: eliminates liquidity bias
+            w_large = sum(full_mktcap_dict.get(s, 0.0) for s in pool_a_large_stocks)
+            w_small = sum(full_mktcap_dict.get(s, 0.0) for s in pool_a_small_stocks)
+        total_w = w_large + w_small
+        w_large = w_large / total_w if total_w > 0 else 0.5
+        w_small = w_small / total_w if total_w > 0 else 0.5
+
+        # --- 2. Distance matrices for Pool A (reused for Neyman + QUOB) ---
+        compute_dist = compute_simplecor_matrix if self.simple_corr else compute_dcor_matrix
+        returns_large = self.new_return[:, pool_a_large_local]
+        returns_small = self.new_return[:, pool_a_small_local]
+        n_l, n_s = len(pool_a_large_local), len(pool_a_small_local)
+
+        D_large = compute_dist(returns_large)
+        D_small = compute_dist(returns_small)
+
+        d_bar_large = D_large.sum() / (n_l * (n_l - 1)) if n_l > 1 else 0.0
+        d_bar_small = D_small.sum() / (n_s * (n_s - 1)) if n_s > 1 else 0.0
+
+        # --- 3. Neyman allocation: K_h ∝ n_h × d̄_h ---
+        score_large = n_l * d_bar_large
+        score_small = n_s * d_bar_small
+        total_score = score_large + score_small
+        K_large = max(1, round(self.K * score_large / total_score)) if total_score > 0 else max(1, round(self.K * n_l / (n_l + n_s)))
+        K_small = self.K - K_large
+        K_large = min(K_large, n_l)
+        K_small = min(max(K_small, 1), n_s)
+        K_large = self.K - K_small
+
+        print(
+            f"Stratified QUOB (Neyman, two-pool): "
+            f"large (A:{n_l}+B:{len(pool_b_large_stocks)}, {w_large:.1%} cap, d̄={d_bar_large:.4f}) → K={K_large} | "
+            f"small (A:{n_s}+B:{len(pool_b_small_stocks)}, {w_small:.1%} cap, d̄={d_bar_small:.4f}) → K={K_small}"
+        )
+
+        common_kwargs = dict(
+            simple_corr=self.simple_corr,
             replicator_cores=self.universe.args.replicator_cores,
             time_limit=self.universe.args.time_limit,
+            d_scale=getattr(self.universe.args, 'd_scale', 1.0),
         )
-        return obj.get_weights()
+
+        # --- Phase 17c: no stratification — single QUOB on full Pool A ---
+        if getattr(self.universe.args, 'no_stratification', False):
+            n_total = self.new_return.shape[1]
+            compute_dist = compute_simplecor_matrix if self.simple_corr else compute_dcor_matrix
+            D_full = compute_dist(self.new_return)
+            quob_full = QUOB(self.new_return, self.new_index, self.K,
+                             precomputed_dist=D_full, **common_kwargs)
+            _ = quob_full.get_weights()
+            medoid_local = quob_full.idx
+            medoid_rets = self.new_return[:, medoid_local]
+            K_full = quob_full.K
+            cluster_mktcap = np.zeros(K_full)
+            if quob_full.cluster_assignments is not None:
+                for stock_pos, cluster_pos in enumerate(quob_full.cluster_assignments):
+                    if 0 <= cluster_pos < K_full:
+                        cluster_mktcap[cluster_pos] += full_mktcap_dict.get(filtered_stocks[stock_pos], 0.0)
+            else:
+                assignments = self._nearest_medoid(self.new_return, medoid_rets)
+                for stock_pos, cluster_pos in enumerate(assignments):
+                    cluster_mktcap[cluster_pos] += full_mktcap_dict.get(filtered_stocks[stock_pos], 0.0)
+            if pool_b_in_capweight:
+                pool_b_all = [s for s in pre_liq_columns if s not in filtered_set]
+                pool_b_rets, available_b = self._get_pool_b_returns(pool_b_all)
+                if pool_b_rets is not None and len(available_b) > 0:
+                    assignments_b = self._nearest_medoid(pool_b_rets, medoid_rets)
+                    for bi, stock_name in enumerate(available_b):
+                        cluster_mktcap[assignments_b[bi]] += full_mktcap_dict.get(stock_name, 0.0)
+            total_cluster = cluster_mktcap.sum()
+            if total_cluster > 0:
+                cluster_mktcap /= total_cluster
+            else:
+                cluster_mktcap = np.ones(K_full) / K_full
+            global_weights = np.zeros(n_total)
+            for k, med_i in enumerate(medoid_local):
+                global_weights[med_i] = cluster_mktcap[k]
+            return global_weights
+
+        # --- 4. Run QUOB on Pool A per stratum (medoid selection only) ---
+        # get_weights() is called for its side-effect: populates .idx and .cluster_assignments.
+        # The QP weights returned are discarded; cap-weighting is computed below.
+        quob_large = QUOB(returns_large, self.new_index, K_large,
+                          precomputed_dist=D_large, **common_kwargs)
+        _ = quob_large.get_weights()  # triggers stock_picking() → sets .idx and .cluster_assignments
+
+        quob_small = QUOB(returns_small, self.new_index, K_small,
+                          precomputed_dist=D_small, **common_kwargs)
+        _ = quob_small.get_weights()
+
+        # --- 5. Weight assignment ---
+        n_total = self.new_return.shape[1]
+        global_weights = np.zeros(n_total)
+
+        # Phase 18: QP targeting r_index directly.
+        # Collect medoid global indices from both strata, then solve:
+        #   min ||R_medoids @ w - r_index||²  s.t. Σw=1, w≥0
+        # Pool B is not held (realistic) but its influence passes through the index target.
+        if getattr(self.universe.args, 'phase18_qp_index', False):
+            medoid_globals = []
+            for quob_obj, pool_a_local in [
+                (quob_large, pool_a_large_local),
+                (quob_small, pool_a_small_local),
+            ]:
+                for med_local_i in quob_obj.idx:
+                    medoid_globals.append(pool_a_local[med_local_i])
+            R_med = self.new_return[:, medoid_globals]
+            n_med = len(medoid_globals)
+            w0 = np.ones(n_med) / n_med
+            result = minimize(
+                lambda w: np.sum((R_med @ w - self.new_index) ** 2),
+                w0,
+                method='SLSQP',
+                constraints={'type': 'eq', 'fun': lambda w: w.sum() - 1},
+                bounds=[(0, 1)] * n_med,
+            )
+            if not result.success:
+                print(f"Warning: Phase 18 QP did not converge: {result.message}")
+            for k, gidx in enumerate(medoid_globals):
+                global_weights[gidx] = max(0.0, result.x[k])
+            return global_weights
+
+        # Cap-weighting (Phase 12 / 16): each medoid receives the sum of mktcap of
+        # all stocks in its cluster (Pool A via ReplicaTOR + optionally Pool B).
+
+        for quob_obj, pool_a_local, pool_a_stocks, pool_b_stocks, returns_a, w_stratum in [
+            (quob_large, pool_a_large_local, pool_a_large_stocks, pool_b_large_stocks, returns_large, w_large),
+            (quob_small, pool_a_small_local, pool_a_small_stocks, pool_b_small_stocks, returns_small, w_small),
+        ]:
+            K_h = quob_obj.K
+            medoid_local = quob_obj.idx  # K_h indices within Pool A stratum
+            medoid_rets = returns_a[:, medoid_local]  # T × K_h
+
+            # Pool A contributions via ReplicaTOR cluster assignments
+            cluster_mktcap = np.zeros(K_h)
+            if quob_obj.cluster_assignments is not None:
+                for stock_pos, cluster_pos in enumerate(quob_obj.cluster_assignments):
+                    if 0 <= cluster_pos < K_h:
+                        cluster_mktcap[cluster_pos] += full_mktcap_dict.get(pool_a_stocks[stock_pos], 0.0)
+            else:
+                assignments_a = self._nearest_medoid(returns_a, medoid_rets)
+                for stock_pos, cluster_pos in enumerate(assignments_a):
+                    cluster_mktcap[cluster_pos] += full_mktcap_dict.get(pool_a_stocks[stock_pos], 0.0)
+
+            # Pool B contributions — assign to nearest medoid by Pearson correlation
+            # Skipped in Phase 16 (exclude_pool_b_capweight=True): Pool A only cap-weighting
+            if pool_b_in_capweight:
+                pool_b_rets, available_b = self._get_pool_b_returns(pool_b_stocks)
+                if pool_b_rets is not None and len(available_b) > 0:
+                    assignments_b = self._nearest_medoid(pool_b_rets, medoid_rets)
+                    for bi, stock_name in enumerate(available_b):
+                        cluster_mktcap[assignments_b[bi]] += full_mktcap_dict.get(stock_name, 0.0)
+
+            # Normalize within stratum and scale by stratum market-cap fraction
+            total_cluster = cluster_mktcap.sum()
+            if total_cluster > 0:
+                cluster_mktcap /= total_cluster
+            else:
+                cluster_mktcap = np.ones(K_h) / K_h
+
+            for k, med_local_i in enumerate(medoid_local):
+                global_weights[pool_a_local[med_local_i]] += cluster_mktcap[k] * w_stratum
+
+        return global_weights
+
+    def _get_pool_b_returns(self, pool_b_stocks):
+        """Return (returns_matrix, available_stocks) for Pool B stocks over the training window.
+
+        Applies fillna(0) and hard_clip — same transforms as Pool A — so that Pearson
+        correlation estimates are consistent between pools.
+        """
+        training_dates = self.universe.df_return.index
+        available = [s for s in pool_b_stocks if s in self.universe.df_return_all.columns]
+        if not available:
+            return None, []
+        rets = self.universe.df_return_all.loc[training_dates, available].fillna(0.0).values
+        hard_clip = getattr(self.universe.args, 'hard_clip', 1.0)
+        if hard_clip > 0:
+            rets = np.clip(rets, -hard_clip, hard_clip)
+        return rets, available
+
+    def _nearest_medoid(self, stock_returns, medoid_returns):
+        """Assign each stock to its nearest medoid by maximum Pearson correlation.
+
+        Vectorized: normalize columns to zero mean and unit norm, then compute
+        the full correlation matrix as a single matrix multiply. Falls back to
+        medoid 0 for constant series (norm == 0).
+        """
+        def normalize_cols(X):
+            X = X - X.mean(axis=0)
+            norms = np.linalg.norm(X, axis=0)
+            norms = np.where(norms > 0, norms, 1.0)
+            return X / norms
+
+        pb = normalize_cols(stock_returns)   # T × n_stocks
+        pm = normalize_cols(medoid_returns)  # T × K_h
+        corr_matrix = pb.T @ pm              # n_stocks × K_h
+        return np.argmax(corr_matrix, axis=1)
 
     def gurobi(self):
         obj = Gurobi(
@@ -265,161 +413,23 @@ class Solution:
             return np.zeros(self.new_return.shape[1])
         return weights
 
-    def lagrange_partial_forward(
-        self
-    ) -> dict :
-        num_assets = self.num_assets
-        new_return = self.new_return
-        new_index = self.new_index
-        largest_weight = []
-        largest_stocks = []
-        stock_list = self.stock_list
-        K = self.K
-
-        while len(largest_weight) < K :
-            # Define initial weight
-            initial_weight = np.ones(num_assets)
-            initial_weight /= initial_weight.sum()
-            bounds = [(0, 1) for _ in range(num_assets)]
-
-            # Define Objective & Constratins
-            objective = lambda weight: np.sum((new_return @ weight - new_index)**2)
-            constraint = {'type': 'eq', 'fun': self.weight_sum_constraint}
-
-            # Optimization
-            result = minimize(objective, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds)
-            if not result.success:
-                print(f"Warning: lagrange_forward greedy step SLSQP did not converge: {result.message}")
-
-            # Find Largest Weight
-            max_idx = np.argmax(result.x)
-            max_weight = result.x[max_idx]
-            max_weight_stock = stock_list[max_idx]
-            largest_weight.append(max_weight)
-            largest_stocks.append(max_weight_stock)
-            print("largest weight:", max_weight)
-            print("largest weight stock:", max_weight_stock)
-
-            # Remove Largest Weight
-            new_return = np.delete(new_return, max_idx, axis=1)
-            stock_list = np.delete(stock_list, max_idx)
-            num_assets -= 1
-
-        # Finally QP with K stocks
-        initial_weight = np.ones(K)
-        initial_weight /= initial_weight.sum()
-        bounds = [(0, 1) for _ in range(K)]
-        # Define Largest Return data
-        df_new_return = self.universe.df_return[largest_stocks]
-        new_return = np.array(df_new_return)
-        # Define Objective & Constratins & Problem
-        objective = lambda weight: np.sum((new_return @ weight - new_index)**2)
-        constraint = {'type': 'eq', 'fun': self.weight_sum_constraint}
-        # Optimization
-        result = minimize(objective, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds)
-        if not result.success:
-            print(f"Warning: lagrange_forward final QP SLSQP did not converge: {result.message}")
-        self.optimal_weight = result.x
-        self.stock2weight = {}
-        for i in range(len(largest_stocks)):
-            self.stock2weight[largest_stocks[i]] = result.x[i]
-        for i in range(len(stock_list)):
-            if stock_list[i] not in self.stock2weight:
-                self.stock2weight[stock_list[i]] = 0
-
-        return self.stock2weight
-
-
-    def lagrange_partial_backward(
-        self,
-    ) -> dict :
-        num_assets = self.num_assets
-        new_return = self.new_return
-        new_index = self.new_index
-        smallest_weight = []
-        smallest_stocks = []
-        stock_list = self.stock_list
-        K = self.K
-
-        if num_assets < K:
-            raise ValueError(
-                f"Number of assets ({num_assets}) is already below target cardinality K={K} "
-                "before backward elimination can start."
-            )
-
-        new_stock_list = stock_list
-        result = None
-        while num_assets >= K :
-            # Define initial weight
-            initial_weight = np.ones(num_assets)
-            initial_weight /= initial_weight.sum()
-            bounds = [(0, 1) for _ in range(num_assets)]
-
-            # Define Objective & Constratins
-            objective = lambda weight: np.sum((new_return @ weight - new_index)**2)
-            constraint = {'type': 'eq', 'fun': self.weight_sum_constraint}
-
-            # Optimization
-            result = minimize(objective, initial_weight, method = 'SLSQP', constraints=constraint, bounds=bounds)
-            if not result.success:
-                print(f"Warning: lagrange_backward elimination step SLSQP did not converge: {result.message}")
-
-            if num_assets != K:
-                # Find Smallest Weight
-                min_idx = np.argmin(result.x)
-                min_weight = result.x[min_idx]
-                min_weight_stock = new_stock_list[min_idx]
-                smallest_weight.append(min_weight)
-                smallest_stocks.append(min_weight_stock)
-                print("smallest weight:", min_weight)
-                print("smallest weight stock:", min_weight_stock)
-
-                # Remove Smallest Weight
-                new_return = np.delete(new_return, min_idx, axis=1)
-                new_stock_list = np.delete(new_stock_list, min_idx)
-                num_assets -= 1
-            else:
-                break
-
-        self.optimal_weight = result.x
-        self.stock2weight = {}
-        for i in range(len(new_stock_list)):
-            self.stock2weight[new_stock_list[i]] = self.optimal_weight[i]
-        for i in range(len(stock_list)):
-            if stock_list[i] not in self.stock2weight:
-                self.stock2weight[stock_list[i]] = 0
-
-        return self.stock2weight
-
-
-
-
     def solve(
         self,
     ) -> dict :
         solution_name = self.solution_name
 
-        if solution_name == 'lagrange_full':
-            weights = self.lagrange_full_replication()
-        elif solution_name == 'lagrange_ours':
-            weights = self.lagrange_partial_ours()
-        elif solution_name == 'quob':
+        if solution_name == 'quob':
             weights = self.quob()
-        elif solution_name == 'quob_cor':
-            weights = self.quob_cor()
+        elif solution_name == 'quob_stratified':
+            weights = self.stratified_quob()
         elif solution_name == 'gurobi':
             weights = self.gurobi()
         elif solution_name == 'gurobi_cor':
             weights = self.gurobi_cor()
-        elif solution_name == 'lagrange_forward':
-            weights = self.lagrange_partial_forward()
-        elif solution_name == 'lagrange_backward':
-            weights = self.lagrange_partial_backward()
         else:
             raise ValueError(
                 f"Unknown solution name: '{solution_name}'. "
-                "Choose from: lagrange_full, lagrange_ours, quob, quob_cor, "
-                "gurobi, gurobi_cor, lagrange_forward, lagrange_backward."
+                "Choose from: quob, quob_stratified, gurobi, gurobi_cor."
             )
 
         return weights

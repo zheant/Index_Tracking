@@ -347,6 +347,12 @@ def parse_args() -> argparse.Namespace:
             "override to force a specific policy."
         ),
     )
+    parser.add_argument("--pkl_path", default=None,
+        help="Chemin exact vers un PKL spécifique (override la construction automatique du nom).")
+    parser.add_argument("--plots", nargs="+",
+        choices=["cumulative", "tracking_errors", "mae", "combined", "distributions"],
+        default=["cumulative", "tracking_errors", "mae", "combined", "distributions"],
+        help="Graphiques à générer (défaut : tous).")
     return parser.parse_args()
 
 
@@ -360,7 +366,10 @@ def main() -> None:
 
     method_paths = {}
     for solution in cli_args.solutions:
-        path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}.pkl"
+        if cli_args.pkl_path:
+            path = Path(cli_args.pkl_path)
+        else:
+            path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}.pkl"
         method_paths[solution] = path
 
     rendements: Dict[str, ReturnSeries] = {}
@@ -381,11 +390,17 @@ def main() -> None:
     if indice_reference is None:
         raise RuntimeError("No portfolios were loaded; nothing to analyze.")
 
-    _plot_cumulative(rendements, indice_reference, output_dir)
-    _plot_tracking_errors(tracking_errors_all, output_dir)
-    _plot_mae(mae_all, output_dir)
-    _plot_combined(rendements, indice_reference, output_dir)
-    _plot_error_distributions(rendements, indice_reference, output_dir)
+    plots = set(cli_args.plots)
+    if "cumulative" in plots:
+        _plot_cumulative(rendements, indice_reference, output_dir)
+    if "tracking_errors" in plots:
+        _plot_tracking_errors(tracking_errors_all, output_dir)
+    if "mae" in plots:
+        _plot_mae(mae_all, output_dir)
+    if "combined" in plots:
+        _plot_combined(rendements, indice_reference, output_dir)
+    if "distributions" in plots:
+        _plot_error_distributions(rendements, indice_reference, output_dir)
 
     print(f"✅ Graphiques sauvegardés dans : {output_dir}")
 

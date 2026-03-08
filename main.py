@@ -26,6 +26,13 @@ def Main():
     parser.add_argument('--time_limit', type=float, default=300.0,
                     help='Time limit (seconds) applied to QUOB/ReplicaTOR and Gurobi solves')
 
+    parser.add_argument('--d_scale', type=float, default=1.0,
+                    help='D_scale_factor for ReplicaTOR: scales dispersion between selected medoids (default 1.0)')
+
+    parser.add_argument('--strata_large_size', type=int, default=1000,
+                    help='Number of top stocks (by market cap) in the large-cap stratum for stratified QUOB '
+                         '(default 1000: Russell 1000/2000 institutional boundary)')
+
     parser.add_argument('--distance_method', type=str, choices=['dcor', 'pearson'], default='dcor',
                     help='Distance metric for solver matrices (dcor or pearson)')
 
@@ -43,6 +50,16 @@ def Main():
                     help='Seuil de winsorisation en nombre de σ par titre (0 pour désactiver, défaut 3.0)')
     parser.add_argument('--hard_clip', type=float, default=1.0,
                     help='Clip absolu des rendements aberrants avant winsorisation, ex. 1.0 = ±100%% par jour (0 pour désactiver, défaut 1.0)')
+    parser.add_argument('--exclude_pool_b_capweight', action='store_true', default=False,
+                    help='Phase 16 : exclure Pool B du cap-weighting (Pool A uniquement, renormalisé). '
+                         'Élimine le biais de liquidité au coût d\'ignorer ~15-20%% du poids de l\'indice.')
+    parser.add_argument('--no_stratification', action='store_true', default=False,
+                    help='Désactiver la stratification dans quob_stratified : un seul QUOB sur l\'ensemble de Pool A '
+                         'suivi d\'un cap-weighting global. Combiné avec --min_trading_frac 0.0 → Phase 17 sans strates.')
+    parser.add_argument('--phase18_qp_index', action='store_true', default=False,
+                    help='Phase 18 : remplacer le cap-weighting par un QP ciblant r_index directement. '
+                         'Minimise ||R_medoids @ w - r_index||² s.t. Σw=1, w≥0. '
+                         'Pool B non détenu mais son influence passe par la cible index.')
 
     # Select the Data to Use
     parser.add_argument('--start_date', type=str, default="2014-01-02")

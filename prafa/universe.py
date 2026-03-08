@@ -43,6 +43,17 @@ class Universe():
         self.df_index_all.set_index('Date', inplace=True)
         self.df_index_all.sort_index(inplace=True)
 
+        mktcap_path = Path(f"{data_path}/{self.args.index}/mktcap_stocks.csv")
+        if mktcap_path.exists():
+            self.df_mktcap_all = pd.read_csv(mktcap_path)
+            self.df_mktcap_all['date'] = pd.to_datetime(self.df_mktcap_all['date'])
+            self.df_mktcap_all.set_index('date', inplace=True)
+            self.df_mktcap_all.sort_index(inplace=True)
+            print(f"Loaded market-cap data: {self.df_mktcap_all.shape[0]} months x {self.df_mktcap_all.shape[1]} permnos.")
+        else:
+            self.df_mktcap_all = None
+            print(f"No market-cap data found at {mktcap_path}. QUOB will use uniform weights.")
+
     
     def _effective_constituent_year(self, dt: pd.Timestamp) -> int:
         """Convertit une date en année de fichier constituant à utiliser.
@@ -151,6 +162,10 @@ class Universe():
             print(
                 "Legacy missing-data policy: filled all NaNs with zero and kept all columns/rows.",
             )
+            self.mktcap_weights = self.get_index_weights(ref_date)
+            # Legacy has no liquidity filter, so pre-liquidity = filtered universe.
+            self.full_mktcap_weights = self.mktcap_weights
+            self.pre_liquidity_columns = list(self.stock_list)
             self.year = -1
             return
 
@@ -168,6 +183,19 @@ class Universe():
             training=training,
         )
         self.stock_list = list(self.df_return.columns)
+        self.mktcap_weights = self.get_index_weights(ref_date)
+
+        # Two-pool: full market-cap weights over pre-liquidity universe (Pool A + Pool B).
+        # Pool B = stocks that passed the NaN filter but were removed by the liquidity filter.
+        # Exposing their combined weights allows stratified_quob() to aggregate cap weights
+        # correctly over ALL constituents rather than the filtered subset only.
+        pre_liq = getattr(self, '_pre_liquidity_columns', None)
+        if training and pre_liq is not None and len(pre_liq) > len(self.stock_list):
+            self.pre_liquidity_columns = pre_liq
+            self.full_mktcap_weights = self.get_index_weights(ref_date, stock_list=pre_liq)
+        else:
+            self.pre_liquidity_columns = list(self.stock_list)
+            self.full_mktcap_weights = self.mktcap_weights
 
         # Reset the constituent-year cache so the next call to update_stock_list()
         # always reloads from disk.  Without this, if two consecutive windows share
@@ -178,6 +206,44 @@ class Universe():
     
 
     
+    def get_index_weights(self, ref_date: pd.Timestamp, stock_list=None) -> np.ndarray | None:
+        """Return market-cap weights for stock_list (defaults to self.stock_list) at ref_date.
+
+        Uses the most recent month-end on or before ref_date from mktcap_stocks.csv.
+        Stocks missing from the mktcap data receive weight 0 (their absence from the
+        index weighting is the best assumption when cap data is unavailable).
+        Returns None if no mktcap data is loaded or no snapshot precedes ref_date.
+        """
+        if stock_list is None:
+            stock_list = self.stock_list
+        if self.df_mktcap_all is None:
+            return None
+
+        available = self.df_mktcap_all.index[self.df_mktcap_all.index <= ref_date]
+        if len(available) == 0:
+            print(f"Warning: no market-cap snapshot on or before {ref_date.date()}. Using uniform weights.")
+            return None
+
+        snap_date = available[-1]
+        mktcap_row = self.df_mktcap_all.loc[snap_date]
+
+        weights = np.array(
+            [float(mktcap_row.get(stock, np.nan)) for stock in stock_list],
+            dtype=float,
+        )
+        weights = np.where(np.isfinite(weights) & (weights > 0), weights, 0.0)
+
+        total = weights.sum()
+        if total <= 0:
+            print(f"Warning: all market caps are zero/missing at {snap_date.date()}. Using uniform weights.")
+            return None
+
+        weights = weights / total
+        n_missing = (weights == 0).sum()
+        if n_missing > 0:
+            print(f"Market-cap weights computed at {snap_date.date()}: {n_missing}/{len(stock_list)} stocks missing (weight=0).")
+        return weights
+
     def get_stocks_returns(self):
         return self.df_return
     
@@ -251,6 +317,12 @@ class Universe():
         # et poussent l'optimiseur à les sélectionner à tort (bon tracking apparent
         # in-sample, mauvais out-of-sample). On exige un minimum de jours actifs.
         # En mode test, ce filtre utiliserait les stats de la fenêtre future → skippé.
+        #
+        # Two-pool: save column list BEFORE liquidity filter (Pool A + Pool B).
+        # Pool B = stocks that passed the NaN filter but will fail the liquidity filter.
+        # Their market-cap weights must be correctly inherited by the nearest medoid.
+        if training:
+            self._pre_liquidity_columns = list(self.df_return.columns)
         if training:
             nonzero_frac = (self.df_return != 0).mean(axis=0)
             liquid_cols = nonzero_frac >= min_trading_frac
@@ -352,19 +424,3 @@ class Universe():
         # If only future years exist (should not happen with above check), fall back to the earliest
         return latest
 
-    def _get_constituents_for_date(self, dt: pd.Timestamp) -> list[str]:
-        """Retourne la liste des constituants à une date donnée sans modifier l'état interne.
-
-        Contrairement à update_stock_list(), cette méthode est sans effet de bord :
-        elle ne modifie ni self.stock_list ni self.year.
-        """
-        effective_year = self._effective_constituent_year(dt)
-        selected_year = self._select_constituent_year(effective_year)
-        filepath = self.constituent_dir / f"{selected_year}.csv"
-        df = pd.read_csv(filepath, dtype={"permno": str})["permno"]
-        if selected_year != effective_year:
-            print(
-                f"⚠️ Constituents for {effective_year} unavailable; using {selected_year} "
-                f"(for date {dt.date()})."
-            )
-        return df.tolist()
