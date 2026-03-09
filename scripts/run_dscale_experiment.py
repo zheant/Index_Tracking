@@ -25,6 +25,7 @@ Usage (new sweep with thermal fix, distinct PKL names):
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import shutil
 import sys
@@ -78,12 +79,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--hard_clip", type=float, default=1.0)
     p.add_argument("--distance_method", default="pearson")
     p.add_argument("--missing_policy", default="strict")
-    p.add_argument("--replicator_cores", type=int, default=8)
+    p.add_argument("--replicator_cores", type=int, default=int(os.environ.get("REPLICATOR_CORES", 8)))
     p.add_argument("--time_limit", type=float, default=225)
-    p.add_argument("--strata_large_size", type=int, default=1000)
-    p.add_argument("--no_stratification", action="store_true", default=False)
-    p.add_argument("--phase19_medoid_capweight", action="store_true", default=False)
-
     # Paths
     p.add_argument("--data_path", default="financial_data")
     p.add_argument("--result_path", default="results")
@@ -102,17 +99,7 @@ def parse_args() -> argparse.Namespace:
 
 def _pkl_suffix(args: argparse.Namespace) -> str:
     """Mirror the suffix logic in Portfolio.save_portfolio()."""
-    if getattr(args, 'exclude_pool_b_capweight', False):
-        return "_phase16_pool_a_only"
-    if getattr(args, 'phase18_qp_index', False):
-        return "_phase18_qp_index"
-    if getattr(args, 'phase19_medoid_capweight', False):
-        return "_phase19_medoid_capweight"
-    if getattr(args, 'min_trading_frac', 0.50) == 0.0 and getattr(args, 'no_stratification', False):
-        return "_phase17_no_strat"
-    if getattr(args, 'min_trading_frac', 0.50) == 0.0:
-        return "_phase17_no_liq_filter"
-    return ""
+    return "_phase17_no_strat" if getattr(args, 'min_trading_frac', 0.50) == 0.0 else ""
 
 
 def tagged_pkl(args: argparse.Namespace, d_scale: float) -> Path:
@@ -159,13 +146,8 @@ def run_one(args: argparse.Namespace, d_scale: float) -> None:
         "--missing_policy", args.missing_policy,
         "--replicator_cores", str(args.replicator_cores),
         "--time_limit", str(args.time_limit),
-        "--strata_large_size", str(args.strata_large_size),
         "--d_scale", str(d_scale),
     ]
-    if args.no_stratification:
-        cmd.append("--no_stratification")
-    if args.phase19_medoid_capweight:
-        cmd.append("--phase19_medoid_capweight")
 
     sep = "=" * 64
     print(f"\n{sep}\n[d_scale={d_scale:g}] Launching run\n{sep}\n")
@@ -196,7 +178,6 @@ def build_analysis_args(args: argparse.Namespace) -> Namespace:
             args.missing_policy if args.missing_policy != "auto"
             else ("legacy" if args.index == "sp500" else "strict")
         ),
-        min_presence=0.90,
         reconstitution_month=7,
         max_missing_frac=args.max_missing_frac,
         min_trading_frac=args.min_trading_frac,

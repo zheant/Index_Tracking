@@ -42,7 +42,7 @@ def main() -> None:
     returns = returns.loc[args.start_date:args.end_date]
 
     # Forward-fill mktcap monthly → daily, aligned on returns index
-    mktcap_daily = mktcap.reindex(returns.index, method="ffill")
+    mktcap_daily = mktcap.reindex(returns.index).ffill()
 
     # Keep only stocks present in both
     common = returns.columns.intersection(mktcap_daily.columns)

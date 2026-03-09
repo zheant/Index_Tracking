@@ -190,14 +190,6 @@ def _build_synthetic_index(output_dir: Path, reconstitution_month: int) -> None:
         int(p.stem) for p in const_dir.glob("*.csv") if p.stem.isdigit()
     )
 
-    def _active_permnos(dt: pd.Timestamp) -> list[str]:
-        year = dt.year if dt.month >= reconstitution_month else dt.year - 1
-        # Clamp to available range
-        year = max(constituent_years[0], min(constituent_years[-1], year))
-        df = pd.read_csv(const_dir / f"{year}.csv", dtype={"permno": str})
-        return df["permno"].dropna().str.strip().tolist()
-
-    # Pre-load constituent sets per effective year to avoid redundant disk reads
     permnos_by_year: dict[int, list[str]] = {}
     for y in constituent_years:
         df = pd.read_csv(const_dir / f"{y}.csv", dtype={"permno": str})
@@ -218,12 +210,15 @@ def _build_synthetic_index(output_dir: Path, reconstitution_month: int) -> None:
             active_cols = [p for p in permnos_by_year[eff_year] if p in returns.columns]
             prev_eff_year = eff_year
 
-        # Most recent mktcap snapshot on or before this date
+        # Most recent mktcap snapshot on or before this date.
+        # For dates before the first snapshot, use the earliest available
+        # snapshot as the best available approximation.
         avail = mktcap.index[mktcap.index <= date]
-        if len(avail) == 0 or not active_cols:
+        if not active_cols:
             index_returns.append((date.strftime("%Y-%m-%d"), np.nan))
             continue
-        snap = mktcap.loc[avail[-1], active_cols]
+        snap_idx = avail[-1] if len(avail) > 0 else mktcap.index[0]
+        snap = mktcap.loc[snap_idx, active_cols]
         weights = snap.where(snap > 0, other=np.nan).dropna()
         total = weights.sum()
         if total <= 0:

@@ -116,14 +116,11 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
         X_test = universe.get_stocks_returns()
         Y_test = universe.get_index_returns()
         weights_series = _align_weights(weights, X_test.columns, target_cardinality=args.cardinality)
-        # état juste après alignement ---
         k_target = getattr(args, "cardinality", None)
-        x_cols = X_test.shape[1]
-        nz_align = int((weights_series.abs() > 1e-12).sum())
-
+        nz = int((weights_series.abs() > 1e-12).sum())
         print(
             f"[{test_start.date()}→{end_date.date()}] "
-            f"X_cols={x_cols}, nonzero_after_align={nz_align}"
+            f"universe={X_test.shape[1]}, invested={nz}"
             + (f", K_target={k_target}" if k_target is not None else "")
         )
         if X_test.shape[1] < args.cardinality:
@@ -148,12 +145,6 @@ def extract_timeseries(filepath: Path, base_args: argparse.Namespace) -> Tuple[R
                 f"⚠️ Window {test_start.date()} → {end_date.date()}: "
                 "no non-zero weights after alignment; portfolio is all cash."
             )
-
-        nz_after_align = int((weights_series.abs() > 1e-12).sum())
-        print(
-            f"[{test_start.date()}→{end_date.date()}] "
-            f"nonzero_after_align={nz_after_align}"
-        )
 
         return_outsample = X_test.fillna(0.0).mul(weights_series, axis=1).sum(axis=1)
 
@@ -305,7 +296,6 @@ def _build_args(cli_args: argparse.Namespace, solution_name: str) -> argparse.Na
         start_date=cli_args.start_date,
         end_date=cli_args.end_date,
         missing_policy=cli_args.missing_policy,
-        min_presence=getattr(cli_args, "min_presence", 0.90),
         # Paramètres de nettoyage : doivent correspondre exactement à ceux
         # utilisés lors de la génération des portefeuilles (main.py).
         reconstitution_month=getattr(cli_args, "reconstitution_month", 7),
@@ -321,14 +311,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--index", default="russell3000", help="Index name used when generating the portfolios (default: russell3000).")
     parser.add_argument("--data_path", default="financial_data", help="Base folder for financial data (default: financial_data).")
     parser.add_argument("--result_path", default="results", help="Folder containing saved portfolio pickles (default: results).")
-    parser.add_argument("--solutions", nargs="+", default=["quob", "gurobi"], help="Solution names to analyze (default: quob gurobi).")
+    parser.add_argument("--solutions", nargs="+", default=["quob_stratified"], help="Solution names to analyze (default: quob_stratified).")
     parser.add_argument("--cardinality", type=int, default=300, help="Cardinality used during optimization (default: 300 for Russell 3000).")
     parser.add_argument("--rebalancing", type=int, default=12, help="Rebalancing frequency in months (default: 12, matching the notebook).")
     parser.add_argument("--start_date", default="2014-01-02", help="Training start date used for the portfolios.")
     parser.add_argument("--end_date", default="2023-12-31", help="Training end date used for the portfolios.")
     parser.add_argument("--output_dir", default=None, help="Directory to write plots (default: <result_path>/analysis_<index>_<cardinality>).")
-    parser.add_argument("--min_presence", type=float, default=0.90,
-        help="Minimum fraction of non-missing observations required to keep an invested asset in a backtest window (default: 0.90).")
     parser.add_argument("--reconstitution_month", type=int, default=7,
         help="Premier mois où la nouvelle composition est active (défaut 7). Doit correspondre à main.py.")
     parser.add_argument("--max_missing_frac", type=float, default=0.10,
@@ -350,6 +338,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--pkl_path", default=None,
         help="Chemin exact vers un PKL spécifique (override la construction automatique du nom).")
+    parser.add_argument("--pkl_suffix", default="",
+        help="Suffixe à ajouter au nom PKL (ex: _phase17_no_strat, _dscale_0.5).")
     parser.add_argument("--plots", nargs="+",
         choices=["cumulative", "tracking_errors", "mae", "combined", "distributions"],
         default=["cumulative", "tracking_errors", "mae", "combined", "distributions"],
@@ -370,7 +360,8 @@ def main() -> None:
         if cli_args.pkl_path:
             path = Path(cli_args.pkl_path)
         else:
-            path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}.pkl"
+            suffix = getattr(cli_args, 'pkl_suffix', '')
+            path = Path(cli_args.result_path) / f"portfolio_{cli_args.index}_{solution}_{cli_args.cardinality}{suffix}.pkl"
         method_paths[solution] = path
 
     rendements: Dict[str, ReturnSeries] = {}
